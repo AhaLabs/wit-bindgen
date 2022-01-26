@@ -36,6 +36,12 @@ enum Command {
         #[structopt(flatten)]
         common: Common,
     },
+    JsNear {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_js_near::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
     C {
         #[structopt(flatten)]
         opts: wit_bindgen_gen_c::Opts,
@@ -81,6 +87,7 @@ fn main() -> Result<()> {
         Command::Wasmtime { opts, common } => (Box::new(opts.build()), common),
         Command::WasmtimePy { opts, common } => (Box::new(opts.build()), common),
         Command::Js { opts, common } => (Box::new(opts.build()), common),
+        Command::JsNear { opts, common } => (Box::new(opts.build()), common),
         Command::C { opts, common } => (Box::new(opts.build()), common),
         Command::Markdown { opts, common } => (Box::new(opts.build()), common),
         Command::SpiderMonkey { opts, common } => {
