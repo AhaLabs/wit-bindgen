@@ -1,0 +1,5 @@
+record records {
+  records: list<tuple<string, string>>
+}
+
+has-hash-map: function(accounts: list<tuple<string, string>>)

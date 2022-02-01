@@ -163,7 +163,7 @@ impl Js {
         }
     }
 
-    fn ty_to_str(&mut self, iface: &Interface, ty: &Type) -> String {
+    fn ty_to_str(&self, iface: &Interface, ty: &Type) -> String {
         match ty {
             Type::U8
             | Type::CChar
@@ -193,10 +193,10 @@ impl Js {
                             return self.ty_to_str(iface, v.cases[1].ty.as_ref().unwrap())
                                 + " | null";
                         } else if let Some(t) = v.as_option() {
-                            self.needs_ty_option = true;
+                            // self.needs_ty_option = true;
                             return format!("Option<{}>", self.ty_to_str(iface, t));
                         } else if let Some((ok, err)) = v.as_expected() {
-                            self.needs_ty_result = true;
+                            // self.needs_ty_result = true;
                             let first = match ok {
                                 Some(ok) => self.ty_to_str(iface, ok),
                                 None => "undefined".to_string(),
@@ -280,34 +280,42 @@ impl Js {
         }
     }
 
-    fn list_to_str(&mut self, iface: &Interface, ty: &Type) -> String {
-        match self.array_ty(iface, ty) {
-            Some(ty) => ty.to_string(),
-            None => {
-                if let Type::Char = ty {
-                    "string".to_string()
-                } else {
-                    format!("{}[]", self.ty_to_str(iface, ty))
+    fn list_to_str(&self, iface: &Interface, ty: &Type) -> String {
+        if let Some(src) = self.hash_map_to_str(iface, ty) {
+            src
+        } else {
+            match self.array_ty(iface, ty) {
+                Some(ty) => ty.to_string(),
+                None => {
+                    if let Type::Char = ty {
+                        "string".to_string()
+                    } else {
+                        format!("{}[]", self.ty_to_str(iface, ty))
+                    }
                 }
             }
         }
     }
 
     fn print_list(&mut self, iface: &Interface, ty: &Type) {
-        match self.array_ty(iface, ty) {
-            Some(ty) => self.src.ts(ty),
-            None => {
-                if let Type::Char = ty {
-                    self.src.ts("string");
-                } else {
-                    self.print_ty(iface, ty);
-                    self.src.ts("[]");
+        if let Some(src) = self.hash_map_to_str(iface, ty) {
+            self.src.ts(&src)
+        } else {
+            match self.array_ty(iface, ty) {
+                Some(ty) => self.src.ts(ty),
+                None => {
+                    if let Type::Char = ty {
+                        self.src.ts("string");
+                    } else {
+                        self.print_ty(iface, ty);
+                        self.src.ts("[]");
+                    }
                 }
             }
         }
     }
 
-    fn tuple_to_str(&mut self, iface: &Interface, record: &Record) -> String {
+    fn tuple_to_str(&self, iface: &Interface, record: &Record) -> String {
         format!(
             "[{}]",
             record
@@ -408,8 +416,8 @@ impl Js {
                     TypeDefKind::Variant(v) => v
                         .as_option()
                         .and_then(|_| {
-                          is_nullable = true;
-                          v.cases[1].ty.as_ref()
+                            is_nullable = true;
+                            v.cases[1].ty.as_ref()
                         })
                         .unwrap_or(ty),
                     _ => ty,
@@ -419,19 +427,18 @@ impl Js {
             };
             args_string.push_str(to_js_ident(&name.to_mixed_case()));
             if is_nullable {
-              args_string.push_str("?");
+                args_string.push_str("?");
             }
             args_string.push_str(": ");
             args_string.push_str(&self.ty_to_str(iface, ty));
         }
         if args_string.len() > 0 {
-          if is_change(func) {
-            self.src
-                .ts(&format!("(props: CallOptions<{{{}}}>): ", args_string));
-          } else {
-            self.src
-                .ts(&format!("(args: {{{}}}): ", args_string));
-          }
+            if is_change(func) {
+                self.src
+                    .ts(&format!("(props: CallOptions<{{{}}}>): ", args_string));
+            } else {
+                self.src.ts(&format!("(args: {{{}}}): ", args_string));
+            }
         } else {
             self.src.ts("(): ");
         }
@@ -2361,6 +2368,26 @@ impl Js {
     //         "),
     //     }
     // }
+
+    fn hash_map_to_str(&self, iface: &Interface, ty: &Type) -> Option<String> {
+        match ty {
+            Type::Id(id) => {
+                let ty = &iface.types[*id];
+                if let Some(_) = &ty.name {
+                    return None;
+                }
+                match &ty.kind {
+                    TypeDefKind::Record(r) if r.is_tuple() && r.fields.len() == 2 => Some(format!(
+                        "{{[key: {}]:{}}}",
+                        self.ty_to_str(iface, &r.fields[0].ty),
+                        self.ty_to_str(iface, &r.fields[1].ty)
+                    )),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 pub fn to_js_ident(name: &str) -> &str {
@@ -2388,15 +2415,15 @@ impl Source {
     }
 }
 
-fn is_change(func: &Function ) -> bool {
-  if let Some(docs) = &func.docs.contents {
-    let x = docs
-        .split("\n")
-        .filter(|s| *s == "change")
-        .collect::<Vec<_>>();
-    if x.len() == 1 {
-      return true;
+fn is_change(func: &Function) -> bool {
+    if let Some(docs) = &func.docs.contents {
+        let x = docs
+            .split("\n")
+            .filter(|s| *s == "change")
+            .collect::<Vec<_>>();
+        if x.len() == 1 {
+            return true;
+        }
     }
-  }
-  false
+    false
 }
