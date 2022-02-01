@@ -1,0 +1,12 @@
+
+record message {
+  premium: bool,
+  sender: string,
+  text: string,
+}
+
+/// change
+add-message: function(text: string, extra: option<string>)
+
+/// view
+get-messages: function() -> list<message>

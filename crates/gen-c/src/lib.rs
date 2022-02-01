@@ -67,6 +67,7 @@ struct CSig {
     retptrs: Vec<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum Scalar {
     OptionBool(Type),
