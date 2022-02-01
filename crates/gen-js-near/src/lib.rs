@@ -401,7 +401,26 @@ impl Js {
             if i > 0 {
                 args_string.push_str(", ");
             }
+            let mut is_nullable = false;
+            //Note: currently making type non-nullable since the "?" makes it optional
+            let _type = if let Type::Id(id) = ty {
+                match &iface.types[*id].kind {
+                    TypeDefKind::Variant(v) => v
+                        .as_option()
+                        .and_then(|_| {
+                          is_nullable = true;
+                          v.cases[1].ty.as_ref()
+                        })
+                        .unwrap_or(ty),
+                    _ => ty,
+                }
+            } else {
+                ty
+            };
             args_string.push_str(to_js_ident(&name.to_mixed_case()));
+            if is_nullable {
+              args_string.push_str("?");
+            }
             args_string.push_str(": ");
             args_string.push_str(&self.ty_to_str(iface, ty));
         }
@@ -765,7 +784,7 @@ impl Generator for Js {
             }
         };
         // if func.is_async {
-            //self.src.js("async ");
+        //self.src.js("async ");
         // }
         // self.src.js(&format!(
         //     "{}({}) {{\n",
@@ -911,12 +930,12 @@ export interface CallOptions<T> {
             //     .iter()
             //     .chain(funcs.resource_funcs.values().flat_map(|v| v))
             // {
-                // self.src.js(&format!(
-                //     "imports[\"{}\"][\"{}\"] = {};\n",
-                //     module,
-                //     name,
-                //     src.js.trim(),
-                // ));
+            // self.src.js(&format!(
+            //     "imports[\"{}\"][\"{}\"] = {};\n",
+            //     module,
+            //     name,
+            //     src.js.trim(),
+            // ));
             // }
 
             for (_, src) in funcs.freestanding_funcs.iter() {
@@ -1886,7 +1905,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 //         self.load(method, (i * 8) as i32, operands, &mut results);
                 //         //self.src.js(&results.pop().unwrap());
                 //     }
-                    //self.src.js("]");
+                //self.src.js("]");
                 // }
 
                 // Finish the blocks from above
@@ -1901,8 +1920,8 @@ impl Bindgen for FunctionBindgen<'_> {
                 //self.src.js(&name);
                 //self.src.js("'](");
                 // for op in operands {
-                    //self.src.js(op);
-                    //self.src.js(", ");
+                //self.src.js(op);
+                //self.src.js(", ");
                 // }
                 //self.src.js("promise_ctx);\n");
                 //self.src.js("});\n"); // call to `with`
@@ -1979,27 +1998,26 @@ impl Bindgen for FunctionBindgen<'_> {
                 //                 }
             }
 
-            Instruction::Return { amt, func } => {},
+            Instruction::Return { amt, func } => {}
             // match amt {
-                // 0 => {}
-                // 1 => {},//self.src.js(&format!("return {};\n", operands[0])),
-              //  _ => {} //     if self.in_import || func.results.iter().any(|p| p.0.is_empty()) {
-                        //         //self.src.js(&format!("return [{}];\n", operands.join(", ")));
-                        //     } else {
-                        //         assert_eq!(func.results.len(), operands.len());
-                        //         self.src.js(&format!(
-                        //             "return {{ {} }};\n",
-                        //             func.results
-                        //                 .iter()
-                        //                 .zip(operands)
-                        //                 .map(|((name, _), op)| format!("{}: {}", name.to_mixed_case(), op))
-                        //                 .collect::<Vec<_>>()
-                        //                 .join(", ")
-                        //         ));
-                        //     }
-                        // }
+            // 0 => {}
+            // 1 => {},//self.src.js(&format!("return {};\n", operands[0])),
+            //  _ => {} //     if self.in_import || func.results.iter().any(|p| p.0.is_empty()) {
+            //         //self.src.js(&format!("return [{}];\n", operands.join(", ")));
+            //     } else {
+            //         assert_eq!(func.results.len(), operands.len());
+            //         self.src.js(&format!(
+            //             "return {{ {} }};\n",
+            //             func.results
+            //                 .iter()
+            //                 .zip(operands)
+            //                 .map(|((name, _), op)| format!("{}: {}", name.to_mixed_case(), op))
+            //                 .collect::<Vec<_>>()
+            //                 .join(", ")
+            //         ));
+            //     }
+            // }
             // },
-
             Instruction::ReturnAsyncImport { .. } => {
                 // When we reenter webassembly successfully that means that the
                 // host's promise resolved without exception. Take the current
