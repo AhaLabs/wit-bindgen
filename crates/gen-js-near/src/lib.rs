@@ -425,8 +425,13 @@ impl Js {
             args_string.push_str(&self.ty_to_str(iface, ty));
         }
         if args_string.len() > 0 {
+          if is_change(func) {
             self.src
                 .ts(&format!("(props: CallOptions<{{{}}}>): ", args_string));
+          } else {
+            self.src
+                .ts(&format!("(args: {{{}}}): ", args_string));
+          }
         } else {
             self.src.ts("(): ");
         }
@@ -841,15 +846,8 @@ impl Generator for Js {
             .or_insert_with(Exports::default);
 
         let mut func_body = mem::replace(&mut self.src, prev);
-        if let Some(docs) = &func.docs.contents {
-            let x = docs
-                .split("\n")
-                .filter(|s| *s == "change")
-                .collect::<Vec<_>>();
-            if x.len() == 1 {
-                func_body.is_change = Some(true);
-            }
-        }
+
+        func_body.is_change = is_change(func);
         func_body.name = func.name.to_string();
         match &func.kind {
             FunctionKind::Freestanding => {
@@ -1006,13 +1004,13 @@ export interface CallOptions<T> {
             let view_funcs = exports
                 .freestanding_funcs
                 .iter()
-                .filter(|func| func.is_change.is_none())
+                .filter(|func| !func.is_change)
                 .map(|func| format!("\"{}\"", func.name.to_snake_case()))
                 .collect::<Vec<_>>();
             let change_funcs = exports
                 .freestanding_funcs
                 .iter()
-                .filter(|func| func.is_change.is_some())
+                .filter(|func| func.is_change)
                 .map(|func| format!("\"{}\"", func.name.to_snake_case()))
                 .collect::<Vec<_>>();
             for func in exports.freestanding_funcs.iter() {
@@ -2377,7 +2375,7 @@ pub fn to_js_ident(name: &str) -> &str {
 struct Source {
     js: wit_bindgen_gen_core::Source,
     ts: wit_bindgen_gen_core::Source,
-    is_change: Option<bool>,
+    is_change: bool,
     name: String,
 }
 
@@ -2388,4 +2386,17 @@ impl Source {
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);
     }
+}
+
+fn is_change(func: &Function ) -> bool {
+  if let Some(docs) = &func.docs.contents {
+    let x = docs
+        .split("\n")
+        .filter(|s| *s == "change")
+        .collect::<Vec<_>>();
+    if x.len() == 1 {
+      return true;
+    }
+  }
+  false
 }
