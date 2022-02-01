@@ -1023,7 +1023,7 @@ export interface CallOptions<T> {
             //self.src.js("}\n");
 
             self.src.ts( &format!(
-                "export function createContract(account: Account, contractId: string): Contract {{\n\treturn <Contract> new _Contract(account, contractId, {{viewMethods: [{}], changeMethods: [{}]}})\n}}\n", view_funcs.join(", "), change_funcs.join(",")),
+                "export function init(account: Account, contractId: string): Contract {{\n\treturn <Contract> new _Contract(account, contractId, {{viewMethods: [{}], changeMethods: [{}]}})\n}}\n", view_funcs.join(", "), change_funcs.join(",")),
             );
         }
 
