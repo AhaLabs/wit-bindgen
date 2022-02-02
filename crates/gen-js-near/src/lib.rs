@@ -362,7 +362,9 @@ impl Js {
             None => return,
         };
         for line in docs.lines() {
-            self.src.ts(&format!("// {}\n", line));
+            if !(line == "change" || line == "view") {
+                self.src.ts(&format!("// {}\n", line));
+            }
         }
     }
 
@@ -533,7 +535,11 @@ impl Generator for Js {
             for field in record.fields.iter() {
                 self.docs(&field.docs);
                 let (_ty, is_nullable) = is_nullable(iface, &field.ty);
-                self.src.ts(&format!("{}{}: ", field.name.to_mixed_case(), if is_nullable { "?"} else {""}));
+                self.src.ts(&format!(
+                    "{}{}: ",
+                    field.name.to_mixed_case(),
+                    if is_nullable { "?" } else { "" }
+                ));
                 self.print_ty(iface, &_ty);
                 self.src.ts(",\n");
             }
