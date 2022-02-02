@@ -412,7 +412,7 @@ impl Js {
                 args_string.push_str(", ");
             }
             let (_type, is_nullable) = is_nullable(iface, ty);
-            args_string.push_str(to_js_ident(&name.to_mixed_case()));
+            args_string.push_str(to_js_ident(&name.to_snake_case()));
             if is_nullable {
                 args_string.push_str("?");
             }
@@ -537,7 +537,7 @@ impl Generator for Js {
                 let (_ty, is_nullable) = is_nullable(iface, &field.ty);
                 self.src.ts(&format!(
                     "{}{}: ",
-                    field.name.to_mixed_case(),
+                    field.name.to_snake_case(),
                     if is_nullable { "?" } else { "" }
                 ));
                 self.print_ty(iface, &_ty);
