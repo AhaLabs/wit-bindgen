@@ -2345,7 +2345,7 @@ impl Js {
                 }
                 match &ty.kind {
                     TypeDefKind::Record(r) if r.is_tuple() && r.fields.len() == 2 => Some(format!(
-                        "{{[key: {}]:{}}}",
+                        "Record<{}, {}>",
                         self.ty_to_str(iface, &r.fields[0].ty),
                         self.ty_to_str(iface, &r.fields[1].ty)
                     )),
