@@ -483,7 +483,7 @@ impl Generator for Js {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
         self.in_import = variant == AbiVariant::GuestImport;
-        self.src.ts("import { Contract as _Contract, Account, Gas, NEAR, ChangeMethodOptions, ViewFunctionOptions } from 'near-api-js';\n\n");
+        self.src.ts("import { Contract as _Contract, Account, ChangeMethodOptions, ViewFunctionOptions } from 'near-api-js';\n\n");
     }
 
     fn type_record(
