@@ -419,16 +419,17 @@ impl Js {
             args_string.push_str(": ");
             args_string.push_str(&self.ty_to_str(iface, &_type));
         }
-        if args_string.len() > 0 {
-            if is_change(func) {
-                self.src
-                    .ts(&format!("(props: CallOptions<{{{}}}>): ", args_string));
-            } else {
-                self.src.ts(&format!("(args: {{{}}}): ", args_string));
-            }
+
+        let has_args = if args_string.len() > 0 { "" } else { "?" };
+        let options_type = if is_change(func) {
+            "ChangeMethodOptions"
         } else {
-            self.src.ts("(): ");
-        }
+            "ViewFunctionOptions"
+        };
+        self.src.ts(&format!(
+            "(args{}: {{{}}}, options?: {}): ",
+            has_args, args_string, options_type
+        ));
 
         // Always async
         self.src.ts("Promise<");
@@ -482,6 +483,7 @@ impl Generator for Js {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
         self.in_import = variant == AbiVariant::GuestImport;
+        self.src.ts("import { Contract as _Contract, Account, Gas, NEAR, ChangeMethodOptions, ViewFunctionOptions } from 'near-api-js';\n\n");
     }
 
     fn type_record(
@@ -863,37 +865,6 @@ impl Generator for Js {
     }
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
-        self.src.ts("
-import { Gas, NEAR } from \"near-units\";
-/**
- * Options used to initiate a function call (especially a change function call)
- * @see {@link viewFunction} to initiate a view function call
- */
-export interface CallOptions<T> {
-    /**
-     * named arguments to pass the method `{ messageText: 'my message' }`
-     */
-    args: T;
-    /** max amount of gas that method call can use */
-    gas?: Gas;
-    /** amount of NEAR (in yoctoNEAR) to send together with the call */
-    attachedDeposit?: NEAR;
-    /**
-     * Metadata to send the NEAR Wallet if using it to sign transactions.
-     * @see {@link RequestSignTransactionsOptions}
-     */
-    walletMeta?: string;
-    /**
-     * Callback url to send the NEAR Wallet if using it to sign transactions.
-     * @see {@link RequestSignTransactionsOptions}
-     */
-    walletCallbackUrl?: string;
-    /**
-     * Convert input arguments into bytes array.
-     */
-    // stringify?: (input: any) => Buffer;
-}
-");
         for (module, funcs) in mem::take(&mut self.guest_imports) {
             // TODO: `module.exports` vs `export function`
             // self.src.js(&format!(
@@ -985,9 +956,7 @@ export interface CallOptions<T> {
         for (_module, exports) in mem::take(&mut self.guest_exports) {
             // let module = module.to_camel_case();
             self.src
-                .ts("import { Contract as _Contract, Account } from 'near-api-js';\n");
-            self.src
-                .ts("export interface Contract extends _Contract {\n");
+                .ts("\nexport interface Contract extends _Contract {\n");
 
             // Exported resources all get a finalization registry, and we
             // created them after instantiation so we can pass the raw wasm
@@ -1019,8 +988,14 @@ export interface CallOptions<T> {
             self.src.ts("}\n");
             //self.src.js("}\n");
 
-            self.src.ts( &format!(
-                "export function init(account: Account, contractId: string): Contract {{\n\treturn <Contract> new _Contract(account, contractId, {{viewMethods: [{}], changeMethods: [{}]}})\n}}\n", view_funcs.join(", "), change_funcs.join(",")),
+            self.src.ts("\n
+                /**
+                 * Inializing the contract with `contractId`, the accountId of the contract,
+                 * and the `account` that will sign change calls.
+                 */
+                export function init(account: Account, contractId: string): Contract {\n\t");
+            self.src.ts(&format!(
+                "return <Contract> new _Contract(account, contractId, {{viewMethods: [{}], changeMethods: [{}]}})\n}}\n", view_funcs.join(", "), change_funcs.join(",")),
             );
         }
 
