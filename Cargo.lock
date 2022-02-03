@@ -2016,6 +2016,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wit-bindgen-example"
+version = "0.1.0"
+dependencies = [
+ "wasmprinter",
+ "wit-bindgen-gen-core",
+ "wit-bindgen-rust",
+]
+
+[[package]]
 name = "wit-bindgen-gen-c"
 version = "0.1.0"
 dependencies = [

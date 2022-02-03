@@ -10,6 +10,7 @@ members = [
   "crates/wit-bindgen-demo",
   "crates/wasmlink-cli",
   "crates/test-modules",
+  "crates/examples/*",
 ]
 resolver = "2"
 
