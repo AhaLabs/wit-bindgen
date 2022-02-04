@@ -361,10 +361,16 @@ impl Js {
             Some(docs) => docs,
             None => return,
         };
-        for line in docs.lines() {
-            if !(line == "change" || line == "view") {
-                self.src.ts(&format!("// {}\n", line));
+        let lines = docs
+            .lines()
+            .filter(|line| *line != "change" && *line != "view")
+            .collect::<Vec<&str>>();
+        if lines.len() > 0 {
+            self.src.ts("/**\n");
+            for line in lines {
+                self.src.ts(&format!("* {}\n", line));
             }
+            self.src.ts("*/\n");
         }
     }
 
@@ -426,10 +432,12 @@ impl Js {
         } else {
             "ViewFunctionOptions"
         };
-        self.src.ts(&format!(
+        let arg_str = format!(
             "(args{}: {{{}}}, options?: {}): ",
             has_args, args_string, options_type
-        ));
+        );
+
+        self.src.ts(&arg_str);
 
         // Always async
         self.src.ts("Promise<");
@@ -465,6 +473,21 @@ impl Js {
         self.src.ts(">");
 
         self.src.ts(";\n");
+        if is_change(func) {
+            let name = func.item_name().to_snake_case();
+            self.src.ts("/**
+ * returns raw execution outcome
+ */ 
+");
+            self.src.ts(&format!(
+                "{}Raw{} Promise<providers.FinalExecutionOutcome>;\n",
+                name, arg_str
+            ));
+            self.src.ts(&format!(
+                "{}Tx{} transactions.Action;\n",
+                name, arg_str
+            ));
+        }
     }
 
     fn intrinsic(&mut self, i: Intrinsic) -> String {
@@ -483,7 +506,7 @@ impl Generator for Js {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
         self.in_import = variant == AbiVariant::GuestImport;
-        self.src.ts("import { Contract as _Contract, Account, ChangeMethodOptions, ViewFunctionOptions } from 'near-api-js';\n\n");
+        self.src.ts("import { Contract as _Contract, Account, ChangeMethodOptions, ViewFunctionOptions, transactions, providers } from 'near-api-js';\n\n");
     }
 
     fn type_record(
