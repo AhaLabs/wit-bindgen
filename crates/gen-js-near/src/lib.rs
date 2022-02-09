@@ -488,7 +488,7 @@ impl Js {
             self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args, ...options}});\n}}\n"));
             self.docs(&func.docs);
             self.src
-                .ts(&format!("{name}Tx{arg_str} transactions.Action{{\n return transactions.functionCall(\"{name}\", args, options.gas ?? DEFAULT_FUNCTION_CALL_GAS, options.attachedDeposit ?? new BN(0))\n}}\n"));
+                .ts(&format!("{name}Tx{arg_str} transactions.Action{{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
         } else {
             self.src.ts(&format!(
                 "return this.account.viewFunction(this.contractId, \"{name}\", args, options);\n}}\n"
