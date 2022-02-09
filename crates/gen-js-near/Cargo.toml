@@ -1,7 +1,7 @@
 [package]
 name = "wit-bindgen-gen-js-near"
 version = "0.1.0"
-authors = ["Alex Crichton <alex@alexcrichton.com>", "Willem Wyndham <willem@wyndham.tech>"]
+authors = ["Alex Crichton <alex@alexcrichton.com>", "Willem Wyndham <willem@ahalabs.dev>"]
 edition = "2018"
 
 [lib]
@@ -9,12 +9,8 @@ doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
+wit-bindgen-gen-core = { path = '../gen-core', version = '0.1.0', package = "aha-wit-bindgen-gen-core" }
 heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 
-[dev-dependencies]
-test-helpers = { path = '../test-helpers', features = ['wit-bindgen-gen-js'] }
 
-[features]
-wit-compat = ['wit-bindgen-gen-core/witx-compat']
