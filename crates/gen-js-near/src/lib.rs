@@ -2,7 +2,7 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType, WitxInstruction,
+    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator};
 
@@ -376,7 +376,9 @@ impl Js {
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
         self.docs(&func.docs);
-
+        if is_change(func) {
+          self.src.ts("async ");
+        }
         let mut name_printed = false;
         if let FunctionKind::Static { .. } = &func.kind {
             // static methods in imports are still wired up to an imported host
@@ -410,6 +412,7 @@ impl Js {
             // skip the first parameter on methods which is `this`
             FunctionKind::Method { .. } => 1,
         };
+        let name = func.item_name().to_snake_case();
 
         let mut args_string = String::new();
 
@@ -472,20 +475,23 @@ impl Js {
 
         self.src.ts(">");
 
-        self.src.ts(";\n");
+        self.src.ts("{\n");
+
         if is_change(func) {
-            let name = func.item_name().to_snake_case();
-            self.src.ts("/**
- * returns raw execution outcome
- */ 
-");
             self.src.ts(&format!(
-                "{}Raw{} Promise<providers.FinalExecutionOutcome>;\n",
-                name, arg_str
+                "return providers.getTransactionLastResult(await this.{name}Raw(args, options));\n}}\n"
             ));
+            self.docs(&func.docs);
             self.src.ts(&format!(
-                "{}Tx{} transactions.Action;\n",
-                name, arg_str
+                "{name}Raw{arg_str} Promise<providers.FinalExecutionOutcome>{{\n"
+            ));
+            self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args, ...options}});\n}}\n"));
+            self.docs(&func.docs);
+            self.src
+                .ts(&format!("{name}Tx{arg_str} transactions.Action{{\n return transactions.functionCall(\"{name}\", args, options.gas ?? DEFAULT_FUNCTION_CALL_GAS, options.attachedDeposit ?? new BN(0))\n}}\n"));
+        } else {
+            self.src.ts(&format!(
+                "return this.account.viewFunction(this.contractId, \"{name}\", args, options);\n}}\n"
             ));
         }
     }
@@ -506,7 +512,21 @@ impl Generator for Js {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
         self.in_import = variant == AbiVariant::GuestImport;
-        self.src.ts("import { Contract as _Contract, Account, ChangeMethodOptions, ViewFunctionOptions, transactions, providers } from 'near-api-js';\n\n");
+        self.src
+            .ts("import { Account, transactions, providers, DEFAULT_FUNCTION_CALL_GAS } from 'near-api-js';\n\n");
+        self.src.ts("
+        import BN from 'bn.js';
+        export interface ChangeMethodOptions {
+          gas?: BN;
+          attachedDeposit?: BN;
+          walletMeta?: string;
+          walletCallbackUrl?: string;
+      }
+      export interface ViewFunctionOptions {
+        parse?: (response: Uint8Array) => any;
+        stringify?: (input: any) => Uint8Array;
+      }
+        ")
     }
 
     fn type_record(
@@ -539,13 +559,6 @@ impl Generator for Js {
             let name = name.to_shouty_snake_case();
             for (i, field) in record.fields.iter().enumerate() {
                 let field = field.name.to_shouty_snake_case();
-                // self.src.js(&format!(
-                //     "export const {}_{} = {}{};\n",
-                //     name,
-                //     field,
-                //     1u64 << i,
-                //     suffix,
-                // ));
                 self.src.ts(&format!(
                     "export const {}_{} = {}{};\n",
                     name,
@@ -601,16 +614,6 @@ impl Generator for Js {
             }
             self.src.ts("}\n");
 
-            //self.src.js(&format!(
-            //                "export const {} = Object.freeze({{\n",
-            //                name.to_camel_case()
-            //            ));
-            // for (i, case) in variant.cases.iter().enumerate() {
-            //     let name = case.name.to_camel_case();
-            //self.src.js(&format!("{}: \"{}\",\n", i, name));
-            //self.src.js(&format!("\"{}\": {},\n", name, i));
-            // }
-            //self.src.js("});\n");
         } else {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
@@ -812,14 +815,7 @@ impl Generator for Js {
                 "this._obj".to_string()
             }
         };
-        // if func.is_async {
-        //self.src.js("async ");
-        // }
-        // self.src.js(&format!(
-        //     "{}({}) {{\n",
-        //     func.item_name().to_mixed_case(),
-        //     params[sig_start..].join(", ")
-        // ));
+
         self.ts_func(iface, func);
 
         if !first_is_operand {
@@ -834,35 +830,6 @@ impl Generator for Js {
             &mut f,
         );
 
-        // let FunctionBindgen {
-        //     // src,
-        //     needs_memory,
-        //     // needs_realloc,
-        //     needs_free,
-        //     src_object,
-        //     ..
-        // } = f;
-        // if needs_memory {
-        //     // TODO: hardcoding "memory"
-        //     self.src
-        //         .js(&format!("const memory = {}._exports.memory;\n", src_object));
-        // }
-
-        // if let Some(name) = needs_realloc {
-        //self.src.js(&format!(
-        //                "const realloc = {}._exports[\"{}\"];\n",
-        //                src_object, name
-        //            ));
-        // }
-
-        // if let Some(name) = needs_free {
-        //self.src.js(&format!(
-        //                "const free = {}._exports[\"{}\"];\n",
-        //                src_object, name
-        //            ));
-        // }
-        //self.src.js(&src.js);
-        //self.src.js("}\n");
 
         let exports = self
             .guest_exports
@@ -889,76 +856,15 @@ impl Generator for Js {
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         for (module, funcs) in mem::take(&mut self.guest_imports) {
-            // TODO: `module.exports` vs `export function`
-            // self.src.js(&format!(
-            //     "export function add{}ToImports(imports, obj{}) {{\n",
-            //     module.to_camel_case(),
-            //     if self.needs_get_export {
-            //         ", get_export"
-            //     } else {
-            //         ""
-            //     },
-            // ));
-            // self.src.ts(&format!(
-            //     "export function add{}ToImports(imports: any, obj: {0}{}): void;\n",
-            //     module.to_camel_case(),
-            //     if self.needs_get_export {
-            //         ", get_export: (name: string) => WebAssembly.ExportValue"
-            //     } else {
-            //         ""
-            //     },
-            // ));
-            //self.src.js(&format!(
-            //                "if (!(\"{0}\" in imports)) imports[\"{0}\"] = {{}};\n",
-            //                module,
-            //            ));
 
             self.src
                 .ts(&format!("export interface {} {{\n", module.to_camel_case()));
 
-            // for (name, src) in funcs
-            //     .freestanding_funcs
-            //     .iter()
-            //     .chain(funcs.resource_funcs.values().flat_map(|v| v))
-            // {
-            // self.src.js(&format!(
-            //     "imports[\"{}\"][\"{}\"] = {};\n",
-            //     module,
-            //     name,
-            //     src.js.trim(),
-            // ));
-            // }
 
             for (_, src) in funcs.freestanding_funcs.iter() {
                 self.src.ts(&src.ts);
             }
 
-            // if self.imported_resources.len() > 0 {
-            //     self.src
-            //         .js("if (!(\"canonical_abi\" in imports)) imports[\"canonical_abi\"] = {};\n");
-            // }
-            // for resource in self.imported_resources.clone() {
-            //     let slab = self.intrinsic(Intrinsic::Slab);
-            //     self.src.js(&format!(
-            //         "
-            //             const resources{idx} = new {slab}();
-            //             imports.canonical_abi[\"resource_drop_{name}\"] = (i) => {{
-            //                 const val = resources{idx}.remove(i);
-            //                 if (obj.drop{camel})
-            //                     obj.drop{camel}(val);
-            //             }};
-            //         ",
-            //         name = iface.resources[resource].name,
-            //         camel = iface.resources[resource].name.to_camel_case(),
-            //         idx = resource.index(),
-            //         slab = slab,
-            //     ));
-            //     self.src.ts(&format!(
-            //         "drop{}?: (val: {0}) => void;\n",
-            //         iface.resources[resource].name.to_camel_case()
-            //     ));
-            // }
-            //self.src.js("}");
             self.src.ts("}\n");
 
             for (resource, _) in iface.resources.iter() {
@@ -977,49 +883,13 @@ impl Generator for Js {
         let imports = mem::take(&mut self.src);
 
         for (_module, exports) in mem::take(&mut self.guest_exports) {
-            // let module = module.to_camel_case();
-            self.src
-                .ts("\nexport interface Contract extends _Contract {\n");
-
-            // Exported resources all get a finalization registry, and we
-            // created them after instantiation so we can pass the raw wasm
-            // export as the destructor callback.
-            // for r in self.exported_resources.iter() {
-            //     self.src.js(&format!(
-            //         "this._registry{} = new FinalizationRegistry(this._exports['canonical_abi_drop_{}']);\n",
-            //         r.index(),
-            //         iface.resources[*r].name,
-            //     ));
-            // }
-            //self.src.js("}\n");
-            let view_funcs = exports
-                .freestanding_funcs
-                .iter()
-                .filter(|func| !func.is_change)
-                .map(|func| format!("\"{}\"", func.name.to_snake_case()))
-                .collect::<Vec<_>>();
-            let change_funcs = exports
-                .freestanding_funcs
-                .iter()
-                .filter(|func| func.is_change)
-                .map(|func| format!("\"{}\"", func.name.to_snake_case()))
-                .collect::<Vec<_>>();
+            self.src.ts("\nexport class Contract {
+                  
+                  constructor(public readonly contractId: string, public account?: Account){}\n\n");
             for func in exports.freestanding_funcs.iter() {
-                //self.src.js(&func.js);
                 self.src.ts(&func.ts);
             }
             self.src.ts("}\n");
-            //self.src.js("}\n");
-
-            self.src.ts("\n
-                /**
-                 * Inializing the contract with `contractId`, the accountId of the contract,
-                 * and the `account` that will sign change calls.
-                 */
-                export function init(account: Account, contractId: string): Contract {\n\t");
-            self.src.ts(&format!(
-                "return <Contract> new _Contract(account, contractId, {{viewMethods: [{}], changeMethods: [{}]}})\n}}\n", view_funcs.join(", "), change_funcs.join(",")),
-            );
         }
 
         let exports = mem::take(&mut self.src);
@@ -2058,7 +1928,7 @@ impl Bindgen for FunctionBindgen<'_> {
             Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
 
             Instruction::Witx { instr } => match instr {
-                WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
+                // WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
                 i => unimplemented!("{:?}", i),
             },
 
@@ -2068,296 +1938,7 @@ impl Bindgen for FunctionBindgen<'_> {
 }
 
 impl Js {
-    fn print_intrinsics(&mut self) {
-        // if self.all_intrinsics.contains(&Intrinsic::I32ToF32)
-        //     || self.all_intrinsics.contains(&Intrinsic::F32ToI32)
-        // {
-        //     self.src.js("
-        //         const I32_TO_F32_I = new Int32Array(1);
-        //         const I32_TO_F32_F = new Float32Array(I32_TO_F32_I.buffer);
-        //     ");
-        // }
-        // if self.all_intrinsics.contains(&Intrinsic::I64ToF64)
-        //     || self.all_intrinsics.contains(&Intrinsic::F64ToI64)
-        // {
-        //     self.src.js("
-        //         const I64_TO_F64_I = new BigInt64Array(1);
-        //         const I64_TO_F64_F = new Float64Array(I64_TO_F64_I.buffer);
-        //     ");
-        // }
-
-        // if self.all_intrinsics.contains(&Intrinsic::Promises) {
-        //     self.all_intrinsics.insert(Intrinsic::Slab);
-        // }
-
-        // for i in mem::take(&mut self.all_intrinsics) {
-        //     self.print_intrinsic(i);
-        // }
-    }
-
-    // fn print_intrinsic(&mut self, i: Intrinsic) {
-    //     match i {
-    //         Intrinsic::ClampGuest => self.src.js("
-    //             export function clamp_guest(i, min, max) {
-    //                 if (i < min || i > max) \
-    //                     throw new RangeError(`must be between ${min} and ${max}`);
-    //                 return i;
-    //             }
-    //         "),
-    //         Intrinsic::ClampHost => self.src.js("
-    //             export function clamp_host(i, min, max) {
-    //                 if (!Number.isInteger(i)) \
-    //                     throw new TypeError(`must be an integer`);
-    //                 if (i < min || i > max) \
-    //                     throw new RangeError(`must be between ${min} and ${max}`);
-    //                 return i;
-    //             }
-    //         "),
-    //         Intrinsic::PushBuffer => self.src.js("
-    //             export class PushBuffer {
-    //                 constructor(ptr, len, size, write) {
-    //                     this._ptr = ptr;
-    //                     this._len = len;
-    //                     this._size = size;
-    //                     this._write = write;
-    //                 }
-
-    //                 get length() {
-    //                     return this._len;
-    //                 }
-
-    //                 push(val) {
-    //                     if (this._len == 0)
-    //                         return false;
-    //                     this._len -= 1;
-    //                     this._write(val, this._ptr);
-    //                     this._ptr += this._size;
-    //                     return true;
-    //                 }
-    //             }
-    //         "),
-    //         Intrinsic::PullBuffer => self.src.js("
-    //             export class PullBuffer {
-    //                 constructor(ptr, len, size, read) {
-    //                     this._len = len;
-    //                     this._ptr = ptr;
-    //                     this._size = size;
-    //                     this._read = read;
-    //                 }
-
-    //                 get length() {
-    //                     return this._len;
-    //                 }
-
-    //                 pull() {
-    //                     if (this._len == 0)
-    //                         return undefined;
-    //                     this._len -= 1;
-    //                     const ret = this._read(this._ptr);
-    //                     this._ptr += this._size;
-    //                     return ret;
-    //                 }
-    //             }
-    //         "),
-
-    //         Intrinsic::DataView => self.src.js("
-    //             let DATA_VIEW = new DataView(new ArrayBuffer());
-
-    //             export function data_view(mem) {
-    //                 if (DATA_VIEW.buffer !== mem.buffer) \
-    //                     DATA_VIEW = new DataView(mem.buffer);
-    //                 return DATA_VIEW;
-    //             }
-    //         "),
-
-    //         Intrinsic::ClampHost64 => self.src.js("
-    //             export function clamp_host64(i, min, max) {
-    //                 if (typeof i !== 'bigint') \
-    //                     throw new TypeError(`must be a bigint`);
-    //                 if (i < min || i > max) \
-    //                     throw new RangeError(`must be between ${min} and ${max}`);
-    //                 return i;
-    //             }
-    //         "),
-
-    //         // TODO: test removing the isNan test and make sure something fails
-    //         Intrinsic::ValidateF32 => self.src.js("
-    //             export function validate_f32(val) {
-    //                 if (typeof val !== 'number') \
-    //                     throw new TypeError(`must be a number`);
-    //                 if (!Number.isNaN(val) && Math.fround(val) !== val) \
-    //                     throw new RangeError(`must be representable as f32`);
-    //                 return val;
-    //             }
-    //         "),
-
-    //         Intrinsic::ValidateF64 => self.src.js("
-    //             export function validate_f64(val) {
-    //                 if (typeof val !== 'number') \
-    //                     throw new TypeError(`must be a number`);
-    //                 return val;
-    //             }
-    //         "),
-
-    //         Intrinsic::ValidateGuestChar => self.src.js("
-    //             export function validate_guest_char(i) {
-    //                 if ((i > 0x10ffff) || (i >= 0xd800 && i <= 0xdfff)) \
-    //                     throw new RangeError(`not a valid char`);
-    //                 return String.fromCodePoint(i);
-    //             }
-    //         "),
-
-    //         // TODO: this is incorrect. It at least allows strings of length > 0
-    //         // but it probably doesn't do the right thing for unicode or invalid
-    //         // utf16 strings either.
-    //         Intrinsic::ValidateHostChar => self.src.js("
-    //             export function validate_host_char(s) {
-    //                 if (typeof s !== 'string') \
-    //                     throw new TypeError(`must be a string`);
-    //                 return s.codePointAt(0);
-    //             }
-    //         "),
-
-    //         Intrinsic::ValidateFlags => self.src.js("
-    //             export function validate_flags(flags, mask) {
-    //                 if (!Number.isInteger(flags)) \
-    //                     throw new TypeError('flags were not an integer');
-    //                 if ((flags & ~mask) != 0)
-    //                     throw new TypeError('flags have extraneous bits set');
-    //                 return flags;
-    //             }
-    //         "),
-
-    //         Intrinsic::ValidateFlags64 => self.src.js("
-    //             export function validate_flags64(flags, mask) {
-    //                 if (typeof flags !== 'bigint')
-    //                     throw new TypeError('flags were not a bigint');
-    //                 if ((flags & ~mask) != 0n)
-    //                     throw new TypeError('flags have extraneous bits set');
-    //                 return flags;
-    //             }
-    //         "),
-
-    //         Intrinsic::I32ToF32 => self.src.js("
-    //             export function i32ToF32(i) {
-    //                 I32_TO_F32_I[0] = i;
-    //                 return I32_TO_F32_F[0];
-    //             }
-    //         "),
-    //         Intrinsic::F32ToI32 => self.src.js("
-    //             export function f32ToI32(f) {
-    //                 I32_TO_F32_F[0] = f;
-    //                 return I32_TO_F32_I[0];
-    //             }
-    //         "),
-    //         Intrinsic::I64ToF64 => self.src.js("
-    //             export function i64ToF64(i) {
-    //                 I64_TO_F64_I[0] = i;
-    //                 return I64_TO_F64_F[0];
-    //             }
-    //         "),
-    //         Intrinsic::F64ToI64 => self.src.js("
-    //             export function f64ToI64(f) {
-    //                 I64_TO_F64_F[0] = f;
-    //                 return I64_TO_F64_I[0];
-    //             }
-    //         "),
-
-    //         Intrinsic::Utf8Decoder => self
-    //             .src
-    //             .js("export const UTF8_DECODER = new TextDecoder('utf-8');\n"),
-
-    //         Intrinsic::Utf8EncodedLen => //self.src.js("export let UTF8_ENCODED_LEN = 0;\n"),
-
-    //         Intrinsic::Utf8Encode => self.src.js("
-    //             const UTF8_ENCODER = new TextEncoder('utf-8');
-
-    //             export function utf8_encode(s, realloc, memory) {
-    //                 if (typeof s !== 'string') \
-    //                     throw new TypeError('expected a string');
-
-    //                 if (s.length === 0) {
-    //                     UTF8_ENCODED_LEN = 0;
-    //                     return 1;
-    //                 }
-
-    //                 let alloc_len = 0;
-    //                 let ptr = 0;
-    //                 let writtenTotal = 0;
-    //                 while (s.length > 0) {
-    //                     ptr = realloc(ptr, alloc_len, 1, alloc_len + s.length);
-    //                     alloc_len += s.length;
-    //                     const { read, written } = UTF8_ENCODER.encodeInto(
-    //                         s,
-    //                         new Uint8Array(memory.buffer, ptr + writtenTotal, alloc_len - writtenTotal),
-    //                     );
-    //                     writtenTotal += written;
-    //                     s = s.slice(read);
-    //                 }
-    //                 if (alloc_len > writtenTotal)
-    //                     ptr = realloc(ptr, alloc_len, 1, writtenTotal);
-    //                 UTF8_ENCODED_LEN = writtenTotal;
-    //                 return ptr;
-    //             }
-    //         "),
-
-    //         Intrinsic::Slab => self.src.js("
-    //             export class Slab {
-    //                 constructor() {
-    //                     this.list = [];
-    //                     this.head = 0;
-    //                 }
-
-    //                 insert(val) {
-    //                     if (this.head >= this.list.length) {
-    //                         this.list.push({
-    //                             next: this.list.length + 1,
-    //                             val: undefined,
-    //                         });
-    //                     }
-    //                     const ret = this.head;
-    //                     const slot = this.list[ret];
-    //                     this.head = slot.next;
-    //                     slot.next = -1;
-    //                     slot.val = val;
-    //                     return ret;
-    //                 }
-
-    //                 get(idx) {
-    //                     if (idx >= this.list.length)
-    //                         throw new RangeError('handle index not valid');
-    //                     const slot = this.list[idx];
-    //                     if (slot.next === -1)
-    //                         return slot.val;
-    //                     throw new RangeError('handle index not valid');
-    //                 }
-
-    //                 remove(idx) {
-    //                     const ret = this.get(idx); // validate the slot
-    //                     const slot = this.list[idx];
-    //                     slot.val = undefined;
-    //                     slot.next = this.head;
-    //                     this.head = idx;
-    //                     return ret;
-    //                 }
-    //             }
-    //         "),
-
-    //         Intrinsic::Promises => //self.src.js("export const PROMISES = new Slab();\n"),
-    //         Intrinsic::WithCurrentPromise => self.src.js("
-    //             let CUR_PROMISE = null;
-    //             export function with_current_promise(val, closure) {
-    //                 const prev = CUR_PROMISE;
-    //                 CUR_PROMISE = val;
-    //                 try {
-    //                     closure(prev);
-    //                 } finally {
-    //                     CUR_PROMISE = prev;
-    //                 }
-    //             }
-    //         "),
-    //     }
-    // }
+    fn print_intrinsics(&mut self) {}
 
     fn hash_map_to_str(&self, iface: &Interface, ty: &Type) -> Option<String> {
         match ty {
