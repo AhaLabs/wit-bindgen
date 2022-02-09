@@ -524,7 +524,7 @@ impl Generator for Js {
       }
       export interface ViewFunctionOptions {
         parse?: (response: Uint8Array) => any;
-        stringify?: (input: any) => Uint8Array;
+        stringify?: (input: any) => any;
       }
         ")
     }
@@ -885,7 +885,7 @@ impl Generator for Js {
         for (_module, exports) in mem::take(&mut self.guest_exports) {
             self.src.ts("\nexport class Contract {
                   
-                  constructor(public readonly contractId: string, public account?: Account){}\n\n");
+                  constructor(public account: Account, public readonly contractId: string){}\n\n");
             for func in exports.freestanding_funcs.iter() {
                 self.src.ts(&func.ts);
             }
