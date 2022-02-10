@@ -430,7 +430,7 @@ impl Js {
         }
 
         let has_args = if args_string.len() > 0 { "" } else { "?" };
-        let default_object = if args_string.len() > 0 { " = {}" } else { "" };
+        let default_object = if args_string.len() > 0 { "" } else {" = {}" };
         let options_type = if is_change(func) {
             "ChangeMethodOptions"
         } else {
