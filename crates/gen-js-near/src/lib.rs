@@ -377,7 +377,7 @@ impl Js {
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
         self.docs(&func.docs);
         if is_change(func) {
-          self.src.ts("async ");
+            self.src.ts("async ");
         }
         let mut name_printed = false;
         if let FunctionKind::Static { .. } = &func.kind {
@@ -430,14 +430,14 @@ impl Js {
         }
 
         let has_args = if args_string.len() > 0 { "" } else { "?" };
+        let default_object = if args_string.len() > 0 { " = {}" } else { "" };
         let options_type = if is_change(func) {
             "ChangeMethodOptions"
         } else {
             "ViewFunctionOptions"
         };
         let arg_str = format!(
-            "(args{}: {{{}}}, options?: {}): ",
-            has_args, args_string, options_type
+            "(args{has_args}: {{{args_string}}}{default_object}, options?: {options_type}): "
         );
 
         self.src.ts(&arg_str);
@@ -485,13 +485,13 @@ impl Js {
             self.src.ts(&format!(
                 "{name}Raw{arg_str} Promise<providers.FinalExecutionOutcome>{{\n"
             ));
-            self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args ?? {{}}, ...options}});\n}}\n"));
+            self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args, ...options}});\n}}\n"));
             self.docs(&func.docs);
             self.src
                 .ts(&format!("{name}Tx{arg_str} transactions.Action{{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
         } else {
             self.src.ts(&format!(
-                "return this.account.viewFunction(this.contractId, \"{name}\", args ?? {{}}, options);\n}}\n"
+                "return this.account.viewFunction(this.contractId, \"{name}\", args, options);\n}}\n"
             ));
         }
     }
@@ -613,7 +613,6 @@ impl Generator for Js {
                 self.src.ts(&format!("{} = {},\n", name, i));
             }
             self.src.ts("}\n");
-
         } else {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
@@ -830,7 +829,6 @@ impl Generator for Js {
             &mut f,
         );
 
-
         let exports = self
             .guest_exports
             .entry(iface.name.to_string())
@@ -856,10 +854,8 @@ impl Generator for Js {
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         for (module, funcs) in mem::take(&mut self.guest_imports) {
-
             self.src
                 .ts(&format!("export interface {} {{\n", module.to_camel_case()));
-
 
             for (_, src) in funcs.freestanding_funcs.iter() {
                 self.src.ts(&src.ts);
