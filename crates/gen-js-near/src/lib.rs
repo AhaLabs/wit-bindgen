@@ -428,8 +428,6 @@ impl Js {
             args_string.push_str(": ");
             args_string.push_str(&self.ty_to_str(iface, &_type));
         }
-
-        let has_args = if args_string.len() > 0 { "" } else { "?" };
         let default_object = if args_string.len() > 0 { "" } else {" = {}" };
         let options_type = if is_change(func) {
             "ChangeMethodOptions"
@@ -437,7 +435,7 @@ impl Js {
             "ViewFunctionOptions"
         };
         let arg_str = format!(
-            "(args{has_args}: {{{args_string}}}{default_object}, options?: {options_type}): "
+            "(args: {{{args_string}}}{default_object}, options?: {options_type}): "
         );
 
         self.src.ts(&arg_str);
