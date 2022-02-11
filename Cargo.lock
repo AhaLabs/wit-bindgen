@@ -9,7 +9,7 @@ dependencies = [
  "aha-wit-bindgen-gen-core",
  "anyhow",
  "structopt",
- "wit-bindgen-gen-js-near",
+ "wit-bindgen-gen-ts-near",
 ]
 
 [[package]]
@@ -425,7 +425,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "wit-bindgen-gen-js-near"
+name = "wit-bindgen-gen-ts-near"
 version = "0.1.0"
 dependencies = [
  "aha-wit-bindgen-gen-core",
