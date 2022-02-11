@@ -2,23 +2,26 @@ use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
 use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant, Bindgen, Bitcast, Instruction, LiftLower, WasmType,
+    AbiVariant,
 };
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator};
 
+mod gen;
+pub use gen::generate_typescript;
+
 #[derive(Default)]
-pub struct Js {
+pub struct Ts {
     src: Source,
     in_import: bool,
     opts: Opts,
     guest_imports: HashMap<String, Imports>,
     guest_exports: HashMap<String, Exports>,
-    sizes: SizeAlign,
-    intrinsics: BTreeMap<Intrinsic, String>,
+    sizes: SizeAlign, 
     #[allow(dead_code)]
-    all_intrinsics: BTreeSet<Intrinsic>,
     needs_get_export: bool,
+    #[allow(dead_code)]
     imported_resources: BTreeSet<ResourceId>,
+    #[allow(dead_code)]
     exported_resources: BTreeSet<ResourceId>,
     needs_ty_option: bool,
     needs_ty_result: bool,
@@ -46,83 +49,19 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn build(self) -> Js {
-        let mut r = Js::new();
+    pub fn build(self) -> Ts {
+        let mut r = Ts::new();
         r.opts = self;
         r
     }
 }
 
-#[allow(dead_code)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-enum Intrinsic {
-    ClampGuest,
-    ClampHost,
-    ClampHost64,
-    PushBuffer,
-    PullBuffer,
-    DataView,
-    ValidateF32,
-    ValidateF64,
-    ValidateGuestChar,
-    ValidateHostChar,
-    ValidateFlags,
-    ValidateFlags64,
-    I32ToF32,
-    F32ToI32,
-    I64ToF64,
-    F64ToI64,
-    Utf8Decoder,
-    Utf8Encode,
-    Utf8EncodedLen,
-    Slab,
-    Promises,
-    WithCurrentPromise,
-}
-
-impl Intrinsic {
-    fn name(&self) -> &'static str {
-        match self {
-            Intrinsic::ClampGuest => "clamp_guest",
-            Intrinsic::ClampHost => "clamp_host",
-            Intrinsic::ClampHost64 => "clamp_host64",
-            Intrinsic::PushBuffer => "PushBuffer",
-            Intrinsic::PullBuffer => "PullBuffer",
-            Intrinsic::DataView => "data_view",
-            Intrinsic::ValidateF32 => "validate_f32",
-            Intrinsic::ValidateF64 => "validate_f64",
-            Intrinsic::ValidateGuestChar => "validate_guest_char",
-            Intrinsic::ValidateHostChar => "validate_host_char",
-            Intrinsic::ValidateFlags => "validate_flags",
-            Intrinsic::ValidateFlags64 => "validate_flags64",
-            Intrinsic::F32ToI32 => "f32ToI32",
-            Intrinsic::I32ToF32 => "i32ToF32",
-            Intrinsic::F64ToI64 => "f64ToI64",
-            Intrinsic::I64ToF64 => "i64ToF64",
-            Intrinsic::Utf8Decoder => "UTF8_DECODER",
-            Intrinsic::Utf8Encode => "utf8_encode",
-            Intrinsic::Utf8EncodedLen => "UTF8_ENCODED_LEN",
-            Intrinsic::Slab => "Slab",
-            Intrinsic::Promises => "PROMISES",
-            Intrinsic::WithCurrentPromise => "with_current_promise",
-        }
-    }
-}
-
-impl Js {
-    pub fn new() -> Js {
-        Js::default()
+impl Ts {
+    pub fn new() -> Ts {
+        Ts::default()
     }
 
     fn abi_variant(dir: Direction) -> AbiVariant {
-        // This generator uses a reversed mapping! In the JS host-side
-        // bindings, we don't use any extra adapter layer between guest wasm
-        // modules and the host. When the guest imports functions using the
-        // `GuestImport` ABI, the host directly implements the `GuestImport`
-        // ABI, even though the host is *exporting* functions. Similarly, when
-        // the guest exports functions using the `GuestExport` ABI, the host
-        // directly imports them with the `GuestExport` ABI, even though the
-        // host is *importing* functions.
         match dir {
             Direction::Import => AbiVariant::GuestExport,
             Direction::Export => AbiVariant::GuestImport,
@@ -428,15 +367,14 @@ impl Js {
             args_string.push_str(": ");
             args_string.push_str(&self.ty_to_str(iface, &_type));
         }
-        let default_object = if args_string.len() > 0 { "" } else {" = {}" };
+        let default_object = if args_string.len() > 0 { "" } else { " = {}" };
         let options_type = if is_change(func) {
             "ChangeMethodOptions"
         } else {
             "ViewFunctionOptions"
         };
-        let arg_str = format!(
-            "(args: {{{args_string}}}{default_object}, options?: {options_type}): "
-        );
+        let arg_str =
+            format!("(args: {{{args_string}}}{default_object}, options?: {options_type}): ");
 
         self.src.ts(&arg_str);
 
@@ -471,9 +409,7 @@ impl Js {
             }
         }
 
-        self.src.ts(">");
-
-        self.src.ts("{\n");
+        self.src.ts("> {\n");
 
         if is_change(func) {
             self.src.ts(&format!(
@@ -481,12 +417,12 @@ impl Js {
             ));
             self.docs(&func.docs);
             self.src.ts(&format!(
-                "{name}Raw{arg_str} Promise<providers.FinalExecutionOutcome>{{\n"
+                "{name}Raw{arg_str} Promise<providers.FinalExecutionOutcome> {{\n"
             ));
             self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args, ...options}});\n}}\n"));
             self.docs(&func.docs);
             self.src
-                .ts(&format!("{name}Tx{arg_str} transactions.Action{{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
+                .ts(&format!("{name}Tx{arg_str} transactions.Action {{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
         } else {
             self.src.ts(&format!(
                 "return this.account.viewFunction(this.contractId, \"{name}\", args, options);\n}}\n"
@@ -494,18 +430,9 @@ impl Js {
         }
     }
 
-    fn intrinsic(&mut self, i: Intrinsic) -> String {
-        if let Some(name) = self.intrinsics.get(&i) {
-            return name.clone();
-        }
-        // TODO: should select a name that automatically doesn't conflict with
-        // anything else being generated.
-        self.intrinsics.insert(i, i.name().to_string());
-        return i.name().to_string();
-    }
 }
 
-impl Generator for Js {
+impl Generator for Ts {
     fn preprocess_one(&mut self, iface: &Interface, dir: Direction) {
         let variant = Self::abi_variant(dir);
         self.sizes.fill(variant, iface);
@@ -713,129 +640,21 @@ impl Generator for Js {
     // so a user "export" uses the "guest import" ABI variant on the inside of
     // this `Generator` implementation.
     #[allow(dead_code, unused_variables)]
-    fn export(&mut self, iface: &Interface, func: &Function) {
-        // let prev = mem::take(&mut self.src);
-
-        // let sig = iface.wasm_signature(AbiVariant::GuestImport, func);
-        // let params = (0..sig.params.len())
-        //     .map(|i| format!("arg{}", i))
-        //     .collect::<Vec<_>>();
-        // self.src
-        //     .js(&format!("function({}) {{\n", params.join(", ")));
-        // self.ts_func(iface, func);
-
-        // let mut f = FunctionBindgen::new(self, false, params);
-        // iface.call(
-        //     AbiVariant::GuestImport,
-        //     LiftLower::LiftArgsLowerResults,
-        //     func,
-        //     &mut f,
-        // );
-
-        // let FunctionBindgen {
-        //     src,
-        //     needs_memory,
-        //     needs_realloc,
-        //     needs_free,
-        //     ..
-        // } = f;
-
-        // if needs_memory {
-        //     self.needs_get_export = true;
-        //     // TODO: hardcoding "memory"
-        //     //self.src.js("const memory = get_export(\"memory\");\n");
-        // }
-
-        // if let Some(name) = needs_realloc {
-        //     self.needs_get_export = true;
-        //     self.src
-        //         .js(&format!("const realloc = get_export(\"{}\");\n", name));
-        // }
-
-        // if let Some(name) = needs_free {
-        //     self.needs_get_export = true;
-        //     self.src
-        //         .js(&format!("const free = get_export(\"{}\");\n", name));
-        // }
-        // //self.src.js(&src.js);
-
-        // if func.is_async {
-        //     // Note that `catch_closure` here is defined by the `CallInterface`
-        //     // instruction.
-        //     //self.src.js("}, catch_closure);\n"); // `.then` block
-        //     //self.src.js("});\n"); // `with_current_promise` block.
-        // }
-        // //self.src.js("}");
-
-        // let src = mem::replace(&mut self.src, prev);
-        // let imports = self
-        //     .guest_imports
-        //     .entry(iface.name.to_string())
-        //     .or_insert(Imports::default());
-        // let dst = match &func.kind {
-        //     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
-        //         &mut imports.freestanding_funcs
-        //     }
-        //     FunctionKind::Method { resource, .. } => imports
-        //         .resource_funcs
-        //         .entry(*resource)
-        //         .or_insert(Vec::new()),
-        // };
-        // dst.push((func.name.to_string(), src));
-    }
+    fn export(&mut self, iface: &Interface, func: &Function) {}
 
     // As with `abi_variant` above, we're generating host-side bindings here
     // so a user "import" uses the "export" ABI variant on the inside of
     // this `Generator` implementation.
     fn import(&mut self, iface: &Interface, func: &Function) {
         let prev = mem::take(&mut self.src);
-
-        let mut params = func
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("arg{}", i))
-            .collect::<Vec<_>>();
-        // let mut sig_start = 0;
-        let mut first_is_operand = true;
-        let src_object = match &func.kind {
-            FunctionKind::Freestanding => "this".to_string(),
-            FunctionKind::Static { .. } => {
-                //self.src.js("static ");
-                params.insert(0, iface.name.to_mixed_case());
-                first_is_operand = false;
-                iface.name.to_mixed_case()
-            }
-            FunctionKind::Method { .. } => {
-                params[0] = "this".to_string();
-                // sig_start = 1;
-                "this._obj".to_string()
-            }
-        };
-
         self.ts_func(iface, func);
-
-        if !first_is_operand {
-            params.remove(0);
-        }
-        let mut f = FunctionBindgen::new(self, false, params);
-        f.src_object = src_object;
-        iface.call(
-            AbiVariant::GuestExport,
-            LiftLower::LowerArgsLiftResults,
-            func,
-            &mut f,
-        );
 
         let exports = self
             .guest_exports
             .entry(iface.name.to_string())
             .or_insert_with(Exports::default);
 
-        let mut func_body = mem::replace(&mut self.src, prev);
-
-        func_body.is_change = is_change(func);
-        func_body.name = func.name.to_string();
+        let func_body = mem::replace(&mut self.src, prev);
         match &func.kind {
             FunctionKind::Freestanding => {
                 exports.freestanding_funcs.push(func_body);
@@ -898,14 +717,11 @@ impl Generator for Js {
             );
         }
 
-        //self.src.js(&imports.js);
         self.src.ts(&imports.ts);
-        //self.src.js(&exports.js);
         self.src.ts(&exports.ts);
 
         let src = mem::take(&mut self.src);
         let name = iface.name.to_kebab_case();
-        // files.push(&format!("{}.js", name), src.js.as_bytes());
         if !self.opts.no_typescript {
             files.push(&format!("{}.ts", name), src.ts.as_bytes());
         }
@@ -913,1027 +729,10 @@ impl Generator for Js {
 
     fn finish_all(&mut self, _files: &mut Files) {
         assert!(self.src.ts.is_empty());
-        assert!(self.src.js.is_empty());
-        self.print_intrinsics();
-        assert!(self.src.ts.is_empty());
-        // files.push("intrinsics.js", self.src.js.as_bytes());
-    }
-}
-#[allow(dead_code)]
-struct FunctionBindgen<'a> {
-    gen: &'a mut Js,
-    tmp: usize,
-    src: Source,
-    block_storage: Vec<wit_bindgen_gen_core::Source>,
-    blocks: Vec<(String, Vec<String>)>,
-    in_import: bool,
-    needs_memory: bool,
-    needs_realloc: Option<String>,
-    needs_free: Option<String>,
-    params: Vec<String>,
-    src_object: String,
-}
-
-impl FunctionBindgen<'_> {
-    fn new(gen: &mut Js, in_import: bool, params: Vec<String>) -> FunctionBindgen<'_> {
-        FunctionBindgen {
-            gen,
-            tmp: 0,
-            src: Source::default(),
-            block_storage: Vec::new(),
-            blocks: Vec::new(),
-            in_import,
-            needs_memory: false,
-            needs_realloc: None,
-            needs_free: None,
-            params,
-            src_object: "this".to_string(),
-        }
-    }
-
-    fn tmp(&mut self) -> usize {
-        let ret = self.tmp;
-        self.tmp += 1;
-        ret
-    }
-
-    fn clamp_guest<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        let clamp = self.gen.intrinsic(Intrinsic::ClampGuest);
-        results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
-    }
-
-    fn clamp_host<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        let clamp = self.gen.intrinsic(Intrinsic::ClampHost);
-        results.push(format!("{}({}, {}, {})", clamp, operands[0], min, max));
-    }
-
-    fn clamp_host64<T>(&mut self, results: &mut Vec<String>, operands: &[String], min: T, max: T)
-    where
-        T: std::fmt::Display,
-    {
-        let clamp = self.gen.intrinsic(Intrinsic::ClampHost64);
-        results.push(format!("{}({}, {}n, {}n)", clamp, operands[0], min, max));
-    }
-
-    fn load(&mut self, method: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        self.needs_memory = true;
-        let view = self.gen.intrinsic(Intrinsic::DataView);
-        results.push(format!(
-            "{}(memory).{}({} + {}, true)",
-            view, method, operands[0], offset,
-        ));
-    }
-
-    #[allow(dead_code, unused_variables)]
-    fn store(&mut self, method: &str, offset: i32, operands: &[String]) {
-        // self.needs_memory = true;
-        // let view = self.gen.intrinsic(Intrinsic::DataView);
-        //self.src.js(&format!(
-        //            "{}(memory).{}({} + {}, {}, true);\n",
-        //            view, method, operands[1], offset, operands[0]
-        //        ));
-    }
-
-    fn bind_results(&mut self, amt: usize, results: &mut Vec<String>) {
-        match amt {
-            0 => {}
-            1 => {
-                //self.src.js("const ret = ");
-                results.push("ret".to_string());
-            }
-            n => {
-                //self.src.js("const [");
-                for i in 0..n {
-                    if i > 0 {
-                        //self.src.js(", ");
-                    }
-                    //self.src.js(&format!("ret{}", i));
-                    results.push(format!("ret{}", i));
-                }
-                //self.src.js("] = ");
-            }
-        }
     }
 }
 
-impl Bindgen for FunctionBindgen<'_> {
-    type Operand = String;
-
-    fn sizes(&self) -> &SizeAlign {
-        &self.gen.sizes
-    }
-
-    fn push_block(&mut self) {
-        let prev = mem::take(&mut self.src.js);
-        self.block_storage.push(prev);
-    }
-
-    fn finish_block(&mut self, operands: &mut Vec<String>) {
-        let to_restore = self.block_storage.pop().unwrap();
-        let src = mem::replace(&mut self.src.js, to_restore);
-        self.blocks.push((src.into(), mem::take(operands)));
-    }
-
-    fn allocate_typed_space(&mut self, _iface: &Interface, _ty: TypeId) -> String {
-        unimplemented!()
-    }
-
-    fn i64_return_pointer_area(&mut self, _amt: usize) -> String {
-        unimplemented!()
-    }
-
-    fn is_list_canonical(&self, iface: &Interface, ty: &Type) -> bool {
-        self.gen.array_ty(iface, ty).is_some()
-    }
-
-    #[allow(dead_code, unused_variables)]
-    fn emit(
-        &mut self,
-        iface: &Interface,
-        inst: &Instruction<'_>,
-        operands: &mut Vec<String>,
-        results: &mut Vec<String>,
-    ) {
-        match inst {
-            Instruction::GetArg { nth } => results.push(self.params[*nth].clone()),
-            Instruction::I32Const { val } => results.push(val.to_string()),
-            Instruction::ConstZero { tys } => {
-                for t in tys.iter() {
-                    match t {
-                        WasmType::I64 => results.push("0n".to_string()),
-                        WasmType::I32 | WasmType::F32 | WasmType::F64 => {
-                            results.push("0".to_string());
-                        }
-                    }
-                }
-            }
-
-            // The representation of i32 in JS is a number, so 8/16-bit values
-            // get further clamped to ensure that the upper bits aren't set when
-            // we pass the value, ensuring that only the right number of bits
-            // are transferred.
-            Instruction::U8FromI32 => self.clamp_guest(results, operands, u8::MIN, u8::MAX),
-            Instruction::S8FromI32 => self.clamp_guest(results, operands, i8::MIN, i8::MAX),
-            Instruction::U16FromI32 => self.clamp_guest(results, operands, u16::MIN, u16::MAX),
-            Instruction::S16FromI32 => self.clamp_guest(results, operands, i16::MIN, i16::MAX),
-            // Use `>>>0` to ensure the bits of the number are treated as
-            // unsigned.
-            Instruction::U32FromI32 | Instruction::UsizeFromI32 => {
-                results.push(format!("{} >>> 0", operands[0]));
-            }
-            // All bigints coming from wasm are treated as signed, so convert
-            // it to ensure it's treated as unsigned.
-            Instruction::U64FromI64 => results.push(format!("BigInt.asUintN(64, {})", operands[0])),
-            // Nothing to do signed->signed where the representations are the
-            // same.
-            Instruction::S32FromI32 | Instruction::S64FromI64 => {
-                results.push(operands.pop().unwrap())
-            }
-
-            // All values coming from the host and going to wasm need to have
-            // their ranges validated, since the host could give us any value.
-            Instruction::I32FromU8 => self.clamp_host(results, operands, u8::MIN, u8::MAX),
-            Instruction::I32FromS8 => self.clamp_host(results, operands, i8::MIN, i8::MAX),
-            Instruction::I32FromU16 => self.clamp_host(results, operands, u16::MIN, u16::MAX),
-            Instruction::I32FromS16 => self.clamp_host(results, operands, i16::MIN, i16::MAX),
-            Instruction::I32FromU32 | Instruction::I32FromUsize => {
-                self.clamp_host(results, operands, u32::MIN, u32::MAX);
-            }
-            Instruction::I32FromS32 => self.clamp_host(results, operands, i32::MIN, i32::MAX),
-            Instruction::I64FromU64 => self.clamp_host64(results, operands, u64::MIN, u64::MAX),
-            Instruction::I64FromS64 => self.clamp_host64(results, operands, i64::MIN, i64::MAX),
-
-            // The native representation in JS of f32 and f64 is just a number,
-            // so there's nothing to do here. Everything wasm gives us is
-            // representable in JS.
-            Instruction::If32FromF32 | Instruction::If64FromF64 => {
-                results.push(operands.pop().unwrap())
-            }
-
-            // For f32 coming from the host we need to validate that the value
-            // is indeed a number and that the 32-bit value matches the
-            // original value.
-            Instruction::F32FromIf32 => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateF32);
-                results.push(format!("{}({})", validate, operands[0]));
-            }
-
-            // Similar to f32, but no range checks, just checks it's a number
-            Instruction::F64FromIf64 => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateF64);
-                results.push(format!("{}({})", validate, operands[0]));
-            }
-
-            // Validate that i32 values coming from wasm are indeed valid code
-            // points.
-            Instruction::CharFromI32 => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateGuestChar);
-                results.push(format!("{}({})", validate, operands[0]));
-            }
-
-            // Validate that strings are indeed 1 character long and valid
-            // unicode.
-            Instruction::I32FromChar => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateHostChar);
-                results.push(format!("{}({})", validate, operands[0]));
-            }
-
-            Instruction::Bitcasts { casts } => {
-                for (cast, op) in casts.iter().zip(operands) {
-                    match cast {
-                        Bitcast::I32ToF32 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::I32ToF32);
-                            results.push(format!("{}({})", cvt, op));
-                        }
-                        Bitcast::F32ToI32 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::F32ToI32);
-                            results.push(format!("{}({})", cvt, op));
-                        }
-                        Bitcast::F32ToF64 | Bitcast::F64ToF32 => results.push(op.clone()),
-                        Bitcast::I64ToF64 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::I64ToF64);
-                            results.push(format!("{}({})", cvt, op));
-                        }
-                        Bitcast::F64ToI64 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::F64ToI64);
-                            results.push(format!("{}({})", cvt, op));
-                        }
-                        Bitcast::I32ToI64 => results.push(format!("BigInt({})", op)),
-                        Bitcast::I64ToI32 => results.push(format!("Number({})", op)),
-                        Bitcast::I64ToF32 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::I32ToF32);
-                            results.push(format!("{}(Number({}))", cvt, op));
-                        }
-                        Bitcast::F32ToI64 => {
-                            let cvt = self.gen.intrinsic(Intrinsic::F32ToI32);
-                            results.push(format!("BigInt({}({}))", cvt, op));
-                        }
-                        Bitcast::None => results.push(op.clone()),
-                    }
-                }
-            }
-
-            // These instructions are used with handles when we're implementing
-            // imports. This means we interact with the `resources` slabs to
-            // translate the wasm-provided index into a JS value.
-            Instruction::I32FromOwnedHandle { ty } => {
-                self.gen.imported_resources.insert(*ty);
-                results.push(format!("resources{}.insert({})", ty.index(), operands[0]));
-            }
-            Instruction::HandleBorrowedFromI32 { ty } => {
-                self.gen.imported_resources.insert(*ty);
-                results.push(format!("resources{}.get({})", ty.index(), operands[0]));
-            }
-
-            // These instructions are used for handles to objects owned in wasm.
-            // This means that they're interacting with a wrapper class defined
-            // in JS.
-            Instruction::I32FromBorrowedHandle { ty } => {
-                let tmp = self.tmp();
-                self.src
-                    .js(&format!("const obj{} = {};\n", tmp, operands[0]));
-
-                // If this is the `this` argument then it's implicitly already valid
-                //                 if operands[0] != "this" {
-                //                     self.src.js(&format!(
-                //                         "if (!(obj{} instanceof {})) ",
-                //                         tmp,
-                //                         iface.resources[*ty].name.to_camel_case()
-                //                     ));
-                //                     //self.src.js(&format!(
-                // //                        "throw new TypeError('expected instance of {}');\n",
-                // //                        iface.resources[*ty].name.to_camel_case()
-                // //                    ));
-                //                 }
-                results.push(format!(
-                    "{}._resource{}_slab.insert(obj{}.clone())",
-                    self.src_object,
-                    ty.index(),
-                    tmp,
-                ));
-            }
-            Instruction::HandleOwnedFromI32 { ty } => {
-                results.push(format!(
-                    "{}._resource{}_slab.remove({})",
-                    self.src_object,
-                    ty.index(),
-                    operands[0],
-                ));
-            }
-
-            Instruction::RecordLower { record, .. } => {
-                if record.is_tuple() {
-                    // Tuples are represented as an array, sowe can use
-                    // destructuring assignment to lower the tuple into its
-                    // components.
-                    let tmp = self.tmp();
-                    let mut expr = "const [".to_string();
-                    for i in 0..record.fields.len() {
-                        if i > 0 {
-                            expr.push_str(", ");
-                        }
-                        let name = format!("tuple{}_{}", tmp, i);
-                        expr.push_str(&name);
-                        results.push(name);
-                    }
-                    //self.src.js(&format!("{}] = {};\n", expr, operands[0]));
-                } else {
-                    // Otherwise we use destructuring field access to get each
-                    // field individually.
-                    let tmp = self.tmp();
-                    let mut expr = "const {".to_string();
-                    for (i, field) in record.fields.iter().enumerate() {
-                        if i > 0 {
-                            expr.push_str(", ");
-                        }
-                        let name = format!("v{}_{}", tmp, i);
-                        expr.push_str(&field.name.to_mixed_case());
-                        expr.push_str(": ");
-                        expr.push_str(&name);
-                        results.push(name);
-                    }
-                    //self.src.js(&format!("{} }} = {};\n", expr, operands[0]));
-                }
-            }
-
-            Instruction::RecordLift { record, .. } => {
-                if record.is_tuple() {
-                    // Tuples are represented as an array, so we just shove all
-                    // the operands into an array.
-                    results.push(format!("[{}]", operands.join(", ")));
-                } else {
-                    // Otherwise records are represented as plain objects, so we
-                    // make a new object and set all the fields with an object
-                    // literal.
-                    let mut result = "{\n".to_string();
-                    for (field, op) in record.fields.iter().zip(operands) {
-                        result.push_str(&format!("{}: {},\n", field.name.to_mixed_case(), op));
-                    }
-                    result.push_str("}");
-                    results.push(result);
-                }
-            }
-
-            Instruction::FlagsLower { record, .. } | Instruction::FlagsLift { record, .. } => {
-                match record.num_i32s() {
-                    0 | 1 => {
-                        let validate = self.gen.intrinsic(Intrinsic::ValidateFlags);
-                        let mask = (1u64 << record.fields.len()) - 1;
-                        results.push(format!("{}({}, {})", validate, operands[0], mask));
-                    }
-                    _ => panic!("unsupported bitflags"),
-                }
-            }
-            Instruction::FlagsLower64 { record, .. } | Instruction::FlagsLift64 { record, .. } => {
-                let validate = self.gen.intrinsic(Intrinsic::ValidateFlags64);
-                let mask = (1u128 << record.fields.len()) - 1;
-                results.push(format!("{}({}, {}n)", validate, operands[0], mask));
-            }
-
-            Instruction::VariantPayloadName => results.push("e".to_string()),
-            Instruction::BufferPayloadName => results.push("e".to_string()),
-            Instruction::VariantLower {
-                variant,
-                results: result_types,
-                name,
-                ..
-            } => {
-                let blocks = self
-                    .blocks
-                    .drain(self.blocks.len() - variant.cases.len()..)
-                    .collect::<Vec<_>>();
-                let tmp = self.tmp();
-                self.src
-                    .js(&format!("const variant{} = {};\n", tmp, operands[0]));
-
-                if result_types.len() == 1
-                    && variant.is_enum()
-                    && name.is_some()
-                    && !variant.is_bool()
-                {
-                    let name = name.unwrap().to_camel_case();
-                    self.src
-                        .js(&format!("if (!(variant{} in {}))\n", tmp, name));
-                    //self.src.js(&format!(
-                    //                        "throw new RangeError(\"invalid variant specified for {}\");\n",
-                    //                        name,
-                    //                    ));
-                    results.push(format!(
-                        "Number.isInteger(variant{}) ? variant{0} : {}[variant{0}]",
-                        tmp, name
-                    ));
-                    return;
-                }
-
-                for i in 0..result_types.len() {
-                    //self.src.js(&format!("let variant{}_{};\n", tmp, i));
-                    results.push(format!("variant{}_{}", tmp, i));
-                }
-
-                let expr_to_match = if variant.is_bool()
-                    || self.gen.is_nullable_option(iface, variant)
-                    || (variant.is_enum() && name.is_some())
-                {
-                    format!("variant{}", tmp)
-                } else {
-                    format!("variant{}.tag", tmp)
-                };
-
-                //self.src.js(&format!("switch ({}) {{\n", expr_to_match));
-                let mut use_default = true;
-                for (i, (case, (block, block_results))) in
-                    variant.cases.iter().zip(blocks).enumerate()
-                {
-                    if variant.is_bool() {
-                        //self.src.js(&format!("case {}: {{\n", case.name.as_str()));
-                    } else if self.gen.is_nullable_option(iface, variant) {
-                        if case.ty.is_none() {
-                            //self.src.js("case null: {\n");
-                        } else {
-                            //self.src.js("default: {\n");
-                            //self.src.js(&format!("const e = variant{};\n", tmp));
-                            use_default = false;
-                        }
-                    } else if variant.is_enum() && name.is_some() {
-                        //self.src.js(&format!("case {}: {{\n", i));
-                        //self.src.js(&format!("const e = variant{};\n", tmp));
-                    } else {
-                        self.src
-                            .js(&format!("case \"{}\": {{\n", case.name.as_str()));
-                        if case.ty.is_some() {
-                            //self.src.js(&format!("const e = variant{}.val;\n", tmp));
-                        }
-                    };
-                    //self.src.js(&block);
-
-                    for (i, result) in block_results.iter().enumerate() {
-                        self.src
-                            .js(&format!("variant{}_{} = {};\n", tmp, i, result));
-                    }
-                    //self.src.js("break;\n}\n");
-                }
-                if use_default {
-                    let variant_name = name.map(|s| s.to_camel_case());
-                    let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                        if variant.is_bool() {
-                            "bool"
-                        } else if variant.as_expected().is_some() {
-                            "expected"
-                        } else if variant.as_option().is_some() {
-                            "option"
-                        } else {
-                            unimplemented!()
-                        }
-                    });
-                    //self.src.js("default:\n");
-                    //self.src.js(&format!(
-                    //                        "throw new RangeError(\"invalid variant specified for {}\");\n",
-                    //                        variant_name
-                    //                    ));
-                }
-                //self.src.js("}\n");
-            }
-
-            Instruction::VariantLift { variant, name, .. } => {
-                let blocks = self
-                    .blocks
-                    .drain(self.blocks.len() - variant.cases.len()..)
-                    .collect::<Vec<_>>();
-
-                let tmp = self.tmp();
-                if variant.is_enum() && name.is_some() && !variant.is_bool() {
-                    let name = name.unwrap().to_camel_case();
-                    self.src
-                        .js(&format!("const tag{} = {};\n", tmp, operands[0]));
-                    //self.src.js(&format!("if (!(tag{} in {}))\n", tmp, name));
-                    //self.src.js(&format!(
-                    //                        "throw new RangeError(\"invalid discriminant specified for {}\");\n",
-                    //                        name,
-                    //                    ));
-                    results.push(format!("tag{}", tmp));
-                    return;
-                }
-
-                //self.src.js(&format!("let variant{};\n", tmp));
-                //self.src.js(&format!("switch ({}) {{\n", operands[0]));
-                for (i, (case, (block, block_results))) in
-                    variant.cases.iter().zip(blocks).enumerate()
-                {
-                    //self.src.js(&format!("case {}: {{\n", i));
-                    //self.src.js(&block);
-
-                    if variant.is_bool() {
-                        assert!(block_results.is_empty());
-                        self.src
-                            .js(&format!("variant{} = {};\n", tmp, case.name.as_str()));
-                    } else if variant.is_enum() && name.is_some() {
-                        assert!(block_results.is_empty());
-                        //self.src.js(&format!("variant{} = tag{0};\n", tmp));
-                    } else if self.gen.is_nullable_option(iface, variant) {
-                        if case.ty.is_none() {
-                            assert!(block_results.is_empty());
-                            //self.src.js(&format!("variant{} = null;\n", tmp));
-                        } else {
-                            assert!(block_results.len() == 1);
-                            self.src
-                                .js(&format!("variant{} = {};\n", tmp, block_results[0]));
-                        }
-                    } else {
-                        //self.src.js(&format!("variant{} = {{\n", tmp));
-                        //self.src.js(&format!("tag: \"{}\",\n", case.name.as_str()));
-                        if case.ty.is_some() {
-                            assert!(block_results.len() == 1);
-                            //self.src.js(&format!("val: {},\n", block_results[0]));
-                        } else {
-                            assert!(block_results.is_empty());
-                        }
-                        //self.src.js("};\n");
-                    }
-                    //self.src.js("break;\n}\n");
-                }
-                let variant_name = name.map(|s| s.to_camel_case());
-                let variant_name = variant_name.as_deref().unwrap_or_else(|| {
-                    if variant.is_bool() {
-                        "bool"
-                    } else if variant.as_expected().is_some() {
-                        "expected"
-                    } else if variant.as_option().is_some() {
-                        "option"
-                    } else {
-                        unimplemented!()
-                    }
-                });
-                //self.src.js("default:\n");
-                //self.src.js(&format!(
-                //                    "throw new RangeError(\"invalid variant discriminant for {}\");\n",
-                //                    variant_name
-                //                ));
-                //self.src.js("}\n");
-                results.push(format!("variant{}", tmp));
-            }
-
-            Instruction::ListCanonLower { element, realloc } => {
-                // Lowering only happens when we're passing lists into wasm,
-                // which forces us to always allocate, so this should always be
-                // `Some`.
-                let realloc = realloc.unwrap();
-                self.gen.needs_get_export = true;
-                self.needs_memory = true;
-                self.needs_realloc = Some(realloc.to_string());
-                let tmp = self.tmp();
-
-                match element {
-                    Type::Char => {
-                        let encode = self.gen.intrinsic(Intrinsic::Utf8Encode);
-                        //self.src.js(&format!(
-                        //                            "const ptr{} = {}({}, realloc, memory);\n",
-                        //                            tmp, encode, operands[0],
-                        //                        ));
-                        let encoded_len = self.gen.intrinsic(Intrinsic::Utf8EncodedLen);
-                        self.src
-                            .js(&format!("const len{} = {};\n", tmp, encoded_len));
-                    }
-                    _ => {
-                        let size = self.gen.sizes.size(element);
-                        let align = self.gen.sizes.align(element);
-                        self.src
-                            .js(&format!("const val{} = {};\n", tmp, operands[0]));
-                        //self.src.js(&format!("const len{} = val{0}.length;\n", tmp));
-                        //self.src.js(&format!(
-                        //                            "const ptr{} = realloc(0, 0, {}, len{0} * {});\n",
-                        //                            tmp, align, size,
-                        //                        ));
-                        // TODO: this is the wrong endianness
-                        //self.src.js(&format!(
-                        //                            "(new Uint8Array(memory.buffer, ptr{}, len{0} * {})).set(new Uint8Array(val{0}.buffer));\n",
-                        //                            tmp, size,
-                        //                        ));
-                    }
-                };
-                results.push(format!("ptr{}", tmp));
-                results.push(format!("len{}", tmp));
-            }
-            Instruction::ListCanonLift { element, free, .. } => {
-                self.needs_memory = true;
-                let tmp = self.tmp();
-                self.src
-                    .js(&format!("const ptr{} = {};\n", tmp, operands[0]));
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, operands[1]));
-                let (result, align) = match element {
-                    Type::Char => {
-                        let decoder = self.gen.intrinsic(Intrinsic::Utf8Decoder);
-                        (
-                            format!(
-                                "{}.decode(new Uint8Array(memory.buffer, ptr{}, len{1}))",
-                                decoder, tmp,
-                            ),
-                            1,
-                        )
-                    }
-                    _ => {
-                        // TODO: this is the wrong endianness
-                        let array_ty = self.gen.array_ty(iface, element).unwrap();
-                        (
-                            format!(
-                                "new {}(memory.buffer.slice(ptr{}, ptr{1} + len{1} * {}))",
-                                array_ty,
-                                tmp,
-                                self.gen.sizes.size(element),
-                            ),
-                            self.gen.sizes.align(element),
-                        )
-                    }
-                };
-                match free {
-                    Some(free) => {
-                        self.needs_free = Some(free.to_string());
-                        //self.src.js(&format!("const list{} = {};\n", tmp, result));
-                        self.src
-                            .js(&format!("free(ptr{}, len{0}, {});\n", tmp, align));
-                        results.push(format!("list{}", tmp));
-                    }
-                    None => results.push(result),
-                }
-            }
-
-            Instruction::ListLower { element, realloc } => {
-                let realloc = realloc.unwrap();
-                let (body, body_results) = self.blocks.pop().unwrap();
-                assert!(body_results.is_empty());
-                let tmp = self.tmp();
-                let vec = format!("vec{}", tmp);
-                let result = format!("result{}", tmp);
-                let len = format!("len{}", tmp);
-                self.needs_realloc = Some(realloc.to_string());
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
-
-                // first store our vec-to-lower in a temporary since we'll
-                // reference it multiple times.
-                //self.src.js(&format!("const {} = {};\n", vec, operands[0]));
-                //self.src.js(&format!("const {} = {}.length;\n", len, vec));
-
-                // ... then realloc space for the result in the guest module
-                //self.src.js(&format!(
-                //                    "const {} = realloc(0, 0, {}, {} * {});\n",
-                //                    result, align, len, size,
-                //                ));
-
-                // ... then consume the vector and use the block to lower the
-                // result.
-                self.src
-                    .js(&format!("for (let i = 0; i < {}.length; i++) {{\n", vec));
-                //self.src.js(&format!("const e = {}[i];\n", vec));
-                self.src
-                    .js(&format!("const base = {} + i * {};\n", result, size));
-                //self.src.js(&body);
-                //self.src.js("}\n");
-
-                results.push(result);
-                results.push(len);
-            }
-
-            Instruction::ListLift { element, free, .. } => {
-                let (body, body_results) = self.blocks.pop().unwrap();
-                let tmp = self.tmp();
-                let size = self.gen.sizes.size(element);
-                let align = self.gen.sizes.align(element);
-                let len = format!("len{}", tmp);
-                //self.src.js(&format!("const {} = {};\n", len, operands[1]));
-                let base = format!("base{}", tmp);
-                //self.src.js(&format!("const {} = {};\n", base, operands[0]));
-                let result = format!("result{}", tmp);
-                //self.src.js(&format!("const {} = [];\n", result));
-                results.push(result.clone());
-
-                self.src
-                    .js(&format!("for (let i = 0; i < {}; i++) {{\n", len));
-                self.src
-                    .js(&format!("const base = {} + i * {};\n", base, size));
-                //self.src.js(&body);
-                assert_eq!(body_results.len(), 1);
-                self.src
-                    .js(&format!("{}.push({});\n", result, body_results[0]));
-                //self.src.js("}\n");
-
-                if let Some(free) = free {
-                    self.needs_free = Some(free.to_string());
-                    self.src
-                        .js(&format!("free({}, {} * {}, {});\n", base, len, size, align,));
-                }
-            }
-
-            Instruction::IterElem { .. } => results.push("e".to_string()),
-
-            Instruction::IterBasePointer => results.push("base".to_string()),
-
-            Instruction::BufferLiftPtrLen { push, ty } => {
-                let (block, block_results) = self.blocks.pop().unwrap();
-                // assert_eq!(block_results.len(), 1);
-                let tmp = self.tmp();
-                self.needs_memory = true;
-                self.src
-                    .js(&format!("const ptr{} = {};\n", tmp, operands[1]));
-                self.src
-                    .js(&format!("const len{} = {};\n", tmp, operands[2]));
-                if let Some(ty) = self.gen.array_ty(iface, ty) {
-                    // TODO: this is the wrong endianness
-                    results.push(format!("new {}(memory.buffer, ptr{}, len{1})", ty, tmp));
-                } else {
-                    let size = self.gen.sizes.size(ty);
-                    if *push {
-                        let buf = self.gen.intrinsic(Intrinsic::PushBuffer);
-                        assert!(block_results.is_empty());
-                        results.push(format!(
-                            "new {}(ptr{}, len{1}, {}, (e, base) => {{
-                                {}
-                            }})",
-                            buf, tmp, size, block
-                        ));
-                    } else {
-                        let buf = self.gen.intrinsic(Intrinsic::PullBuffer);
-                        assert_eq!(block_results.len(), 1);
-                        results.push(format!(
-                            "new {}(ptr{}, len{1}, {}, (base) => {{
-                                {}
-                                return {};
-                            }})",
-                            buf, tmp, size, block, block_results[0],
-                        ));
-                    }
-                }
-            }
-
-            //    Instruction::BufferLowerHandle { push, ty } => {
-            //        let block = self.blocks.pop().unwrap();
-            //        let size = self.sizes.size(ty);
-            //        let tmp = self.tmp();
-            //        let handle = format!("handle{}", tmp);
-            //        let closure = format!("closure{}", tmp);
-            //        self.needs_buffer_transaction = true;
-            //        if iface.all_bits_valid(ty) {
-            //            let method = if *push { "push_out_raw" } else { "push_in_raw" };
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.{}({}) }};\n",
-            //                handle, method, operands[0],
-            //            ));
-            //        } else if *push {
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32| {{
-            //                    Ok(({}, {}))
-            //                }};\n",
-            //                closure, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_out({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        } else {
-            //            let start = self.src.len();
-            //            self.print_ty(iface, ty, TypeMode::AllBorrowed("'_"));
-            //            let ty = self.src[start..].to_string();
-            //            self.src.truncate(start);
-            //            self.closures.push_str(&format!(
-            //                "let {} = |memory: &wasmtime::Memory, base: i32, e: {}| {{
-            //                    {};
-            //                    Ok({})
-            //                }};\n",
-            //                closure, ty, block, size,
-            //            ));
-            //            self.push_str(&format!(
-            //                "let {} = unsafe {{ buffer_transaction.push_in({}, &{}) }};\n",
-            //                handle, operands[0], closure,
-            //            ));
-            //        }
-            //        results.push(format!("{}", handle));
-            //    }
-            Instruction::CallWasm {
-                module: _,
-                name,
-                sig,
-            } => {
-                self.bind_results(sig.results.len(), results);
-                //self.src.js(&self.src_object);
-                //self.src.js("._exports['");
-                //self.src.js(&name);
-                //self.src.js("'](");
-                //self.src.js(&operands.join(", "));
-                //self.src.js(");\n");
-            }
-
-            Instruction::CallWasmAsyncExport {
-                module: _,
-                name,
-                params: _,
-                results: wasm_results,
-            } => {
-                // self.bind_results(wasm_results.len(), results);
-                // let promises = self.gen.intrinsic(Intrinsic::Promises);
-                // self.src.js(&format!(
-                //     "\
-                //         await new Promise((resolve, reject) => {{
-                //             const promise_ctx = {promises}.insert(val => {{
-                //                 if (typeof val !== 'number')
-                //                     return reject(val);
-                //                 resolve(\
-                //     ",
-                //     promises = promises
-                // ));
-
-                // if wasm_results.len() > 0 {
-                //     //self.src.js("[");
-                //     let operands = &["val".to_string()];
-                //     let mut results = Vec::new();
-                //     for (i, result) in wasm_results.iter().enumerate() {
-                //         if i > 0 {
-                //             //self.src.js(", ");
-                //         }
-                //         let method = match result {
-                //             WasmType::I32 => "getInt32",
-                //             WasmType::I64 => "getBigInt64",
-                //             WasmType::F32 => "getFloat32",
-                //             WasmType::F64 => "getFloat64",
-                //         };
-                //         self.load(method, (i * 8) as i32, operands, &mut results);
-                //         //self.src.js(&results.pop().unwrap());
-                //     }
-                //self.src.js("]");
-                // }
-
-                // Finish the blocks from above
-                //self.src.js(");\n"); // `resolve(...)`
-                //self.src.js("});\n"); // `promises.insert(...)`
-
-                // let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                //self.src.js(&with);
-                //self.src.js("(promise_ctx, _prev => {\n");
-                //self.src.js(&self.src_object);
-                //self.src.js("._exports['");
-                //self.src.js(&name);
-                //self.src.js("'](");
-                // for op in operands {
-                //self.src.js(op);
-                //self.src.js(", ");
-                // }
-                //self.src.js("promise_ctx);\n");
-                //self.src.js("});\n"); // call to `with`
-                //self.src.js("});\n"); // `await new Promise(...)`
-            }
-
-            Instruction::CallInterface { module: _, func } => {
-                // let call = |me: &mut FunctionBindgen<'_>| match &func.kind {
-                //     FunctionKind::Freestanding | FunctionKind::Static { .. } => {
-                //         me.src.js(&format!(
-                //             "obj.{}({})",
-                //             func.name.to_mixed_case(),
-                //             operands.join(", "),
-                //         ));
-                //     }
-                //     FunctionKind::Method { name, .. } => {
-                //         me.src.js(&format!(
-                //             "{}.{}({})",
-                //             operands[0],
-                //             name.to_mixed_case(),
-                //             operands[1..].join(", "),
-                //         ));
-                //     }
-                // };
-                // let mut bind_results = |me: &mut FunctionBindgen<'_>| {
-                //     if func.results.len() > 0 {
-                //         if func.results.len() == 1 {
-                //             me.src.js("const ret = ");
-                //             results.push("ret".to_string());
-                //         } else if func.results.iter().any(|p| p.0.is_empty()) {
-                //             me.src.js("const [");
-                //             for i in 0..func.results.len() {
-                //                 if i > 0 {
-                //                     me.src.js(", ")
-                //                 }
-                //                 let name = format!("ret{}", i);
-                //                 me.src.js(&name);
-                //                 results.push(name);
-                //             }
-                //             me.src.js("] = ");
-                //         } else {
-                //             me.src.js("const {");
-                //             for (i, (name, _)) in func.results.iter().enumerate() {
-                //                 if i > 0 {
-                //                     me.src.js(", ")
-                //                 }
-                //                 me.src.js(name);
-                //                 results.push(name.clone());
-                //             }
-                //             me.src.js("} = ");
-                //         }
-                //     }
-                // };
-
-                //                 if func.is_async {
-                //                     let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                //                     let promises = self.gen.intrinsic(Intrinsic::Promises);
-                //                     //self.src.js(&with);
-                //                     //self.src.js("(null, cur_promise => {\n");
-                //                     //self.src.js(&format!(
-                // //                        "const catch_closure = e => {}.remove(cur_promise)(e);\n",
-                // //                        promises
-                // //                    ));
-                //                     call(self);
-                //                     //self.src.js(".then(e => {\n");
-                //                     if func.results.len() > 0 {
-                //                         bind_results(self);
-                //                         //self.src.js("e;\n");
-                //                     }
-                //                 } else {
-                //                     bind_results(self);
-                //                     call(self);
-                //                     //self.src.js(";\n");
-                //                 }
-            }
-
-            Instruction::Return { amt, func } => {}
-            // match amt {
-            // 0 => {}
-            // 1 => {},//self.src.js(&format!("return {};\n", operands[0])),
-            //  _ => {} //     if self.in_import || func.results.iter().any(|p| p.0.is_empty()) {
-            //         //self.src.js(&format!("return [{}];\n", operands.join(", ")));
-            //     } else {
-            //         assert_eq!(func.results.len(), operands.len());
-            //         self.src.js(&format!(
-            //             "return {{ {} }};\n",
-            //             func.results
-            //                 .iter()
-            //                 .zip(operands)
-            //                 .map(|((name, _), op)| format!("{}: {}", name.to_mixed_case(), op))
-            //                 .collect::<Vec<_>>()
-            //                 .join(", ")
-            //         ));
-            //     }
-            // }
-            // },
-            Instruction::ReturnAsyncImport { .. } => {
-                // When we reenter webassembly successfully that means that the
-                // host's promise resolved without exception. Take the current
-                // promise index saved as part of `CallInterface` and update the
-                // `CUR_PROMISE` global with what's currently being executed.
-                // This'll get reset once the wasm returns again.
-                //
-                // Note that the name `cur_promise` used here is introduced in
-                // the `CallInterface` codegen above in the closure for
-                // `with_current_promise` which we're using here.
-                //
-                // TODO: hardcoding `__indirect_function_table` and no help if
-                // it's not actually defined.
-                self.gen.needs_get_export = true;
-                // let with = self.gen.intrinsic(Intrinsic::WithCurrentPromise);
-                // self.src.js(&format!(
-                //     "\
-                //         {with}(cur_promise, _prev => {{
-                //             get_export(\"__indirect_function_table\").get({})({});
-                //         }});
-                //     ",
-                //     operands[0],
-                //     operands[1..].join(", "),
-                //     with = with,
-                // ));
-            }
-
-            Instruction::I32Load { offset } => self.load("getInt32", *offset, operands, results),
-            Instruction::I64Load { offset } => self.load("getBigInt64", *offset, operands, results),
-            Instruction::F32Load { offset } => self.load("getFloat32", *offset, operands, results),
-            Instruction::F64Load { offset } => self.load("getFloat64", *offset, operands, results),
-            Instruction::I32Load8U { offset } => self.load("getUint8", *offset, operands, results),
-            Instruction::I32Load8S { offset } => self.load("getInt8", *offset, operands, results),
-            Instruction::I32Load16U { offset } => {
-                self.load("getUint16", *offset, operands, results)
-            }
-            Instruction::I32Load16S { offset } => self.load("getInt16", *offset, operands, results),
-            Instruction::I32Store { offset } => self.store("setInt32", *offset, operands),
-            Instruction::I64Store { offset } => self.store("setBigInt64", *offset, operands),
-            Instruction::F32Store { offset } => self.store("setFloat32", *offset, operands),
-            Instruction::F64Store { offset } => self.store("setFloat64", *offset, operands),
-            Instruction::I32Store8 { offset } => self.store("setInt8", *offset, operands),
-            Instruction::I32Store16 { offset } => self.store("setInt16", *offset, operands),
-
-            Instruction::Witx { instr } => match instr {
-                // WitxInstruction::PointerFromI32 { .. } => results.push(operands[0].clone()),
-                i => unimplemented!("{:?}", i),
-            },
-
-            i => unimplemented!("{:?}", i),
-        }
-    }
-}
-
-impl Js {
-    fn print_intrinsics(&mut self) {}
-
+impl Ts {
     fn hash_map_to_str(&self, iface: &Interface, ty: &Type) -> Option<String> {
         match ty {
             Type::Id(id) => {
@@ -1965,16 +764,10 @@ pub fn to_js_ident(name: &str) -> &str {
 
 #[derive(Default)]
 struct Source {
-    js: wit_bindgen_gen_core::Source,
     ts: wit_bindgen_gen_core::Source,
-    is_change: bool,
-    name: String,
 }
 
 impl Source {
-    fn js(&mut self, _s: &str) {
-        // self.js.push_str(s);
-    }
     fn ts(&mut self, s: &str) {
         self.ts.push_str(s);
     }
@@ -1993,6 +786,7 @@ fn is_change(func: &Function) -> bool {
     false
 }
 
+// TODO replace this with work upstream
 fn is_nullable(iface: &Interface, ty: &Type) -> (Type, bool) {
     //Note: currently making type non-nullable since the "?" makes it optional
     if let Type::Id(id) = ty {
@@ -2007,3 +801,4 @@ fn is_nullable(iface: &Interface, ty: &Type) -> (Type, bool) {
         (ty.clone(), false)
     }
 }
+
