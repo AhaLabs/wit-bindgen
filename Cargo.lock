@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "aha-wit-bindgen-cli"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "aha-wit-bindgen-gen-core",
  "anyhow",
@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "aha-wit-bindgen-gen-core"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "aha-wit-parser",
  "anyhow",
@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "aha-wit-parser"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "id-arena",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "wit-bindgen-gen-ts-near"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "aha-wit-bindgen-gen-core",
  "anyhow",
