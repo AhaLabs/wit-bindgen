@@ -1,9 +1,7 @@
 use heck::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem;
-use wit_bindgen_gen_core::wit_parser::abi::{
-    AbiVariant,
-};
+use wit_bindgen_gen_core::wit_parser::abi::AbiVariant;
 use wit_bindgen_gen_core::{wit_parser::*, Direction, Files, Generator};
 
 mod gen;
@@ -16,7 +14,7 @@ pub struct Ts {
     opts: Opts,
     guest_imports: HashMap<String, Imports>,
     guest_exports: HashMap<String, Exports>,
-    sizes: SizeAlign, 
+    sizes: SizeAlign,
     #[allow(dead_code)]
     needs_get_export: bool,
     #[allow(dead_code)]
@@ -429,7 +427,6 @@ impl Ts {
             ));
         }
     }
-
 }
 
 impl Generator for Ts {
@@ -801,4 +798,3 @@ fn is_nullable(iface: &Interface, ty: &Type) -> (Type, bool) {
         (ty.clone(), false)
     }
 }
-
