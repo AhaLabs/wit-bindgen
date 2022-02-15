@@ -112,7 +112,8 @@ impl Ts {
             | Type::S32
             | Type::F32
             | Type::F64 => "number".to_string(),
-            Type::U64 | Type::S64 => "bigint".to_string(),
+            Type::U64  => "u64".to_string(),
+            Type::S64 => "i64".to_string(),
             Type::Char => "string".to_string(),
             Type::Handle(id) => iface.resources[*id].name.to_camel_case(),
             Type::Id(id) => {
@@ -167,7 +168,8 @@ impl Ts {
             | Type::S32
             | Type::F32
             | Type::F64 => self.src.ts("number"),
-            Type::U64 | Type::S64 => self.src.ts("bigint"),
+            Type::U64  => self.src.ts("u64"),
+            Type::S64 => self.src.ts("i64"),
             Type::Char => self.src.ts("string"),
             Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
             Type::Id(id) => {
@@ -448,6 +450,11 @@ impl Generator for Ts {
         parse?: (response: Uint8Array) => any;
         stringify?: (input: any) => any;
       }
+
+      /** 64 bit unsigned integer less than 2^53 -1 */
+      type u64 = number;
+      /** 64 bit signed integer less than 2^53 -1 */
+      type i64 = number;
         ")
     }
 
@@ -471,7 +478,7 @@ impl Generator for Ts {
                 .expect("unsupported number of flags");
             let suffix = if repr == Int::U64 {
                 self.src
-                    .ts(&format!("export type {} = bigint;\n", name.to_camel_case()));
+                    .ts(&format!("export type {} = u64;\n", name.to_camel_case()));
                 "n"
             } else {
                 self.src
