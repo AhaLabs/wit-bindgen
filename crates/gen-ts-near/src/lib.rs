@@ -41,10 +41,7 @@ struct Exports {
 
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(feature = "structopt", derive(structopt::StructOpt))]
-pub struct Opts {
-    #[cfg_attr(feature = "structopt", structopt(long = "no-typescript"))]
-    pub no_typescript: bool,
-}
+pub struct Opts {}
 
 impl Opts {
     pub fn build(self) -> Ts {
@@ -63,19 +60,6 @@ impl Ts {
         match dir {
             Direction::Import => AbiVariant::GuestExport,
             Direction::Export => AbiVariant::GuestImport,
-        }
-    }
-
-    fn is_nullable_option(&self, iface: &Interface, variant: &Variant) -> bool {
-        match variant.as_option() {
-            Some(ty) => match ty {
-                Type::Id(id) => match &iface.types[*id].kind {
-                    TypeDefKind::Variant(v) => !self.is_nullable_option(iface, v),
-                    _ => true,
-                },
-                _ => true,
-            },
-            None => false,
         }
     }
 
@@ -100,62 +84,6 @@ impl Ts {
         }
     }
 
-    fn ty_to_str(&self, iface: &Interface, ty: &Type) -> String {
-        match ty {
-            Type::U8
-            | Type::CChar
-            | Type::S8
-            | Type::U16
-            | Type::S16
-            | Type::U32
-            | Type::Usize
-            | Type::S32
-            | Type::F32
-            | Type::F64 => "number".to_string(),
-            Type::U64  => "u64".to_string(),
-            Type::S64 => "i64".to_string(),
-            Type::Char => "string".to_string(),
-            Type::Handle(id) => iface.resources[*id].name.to_camel_case(),
-            Type::Id(id) => {
-                let ty = &iface.types[*id];
-                if let Some(name) = &ty.name {
-                    return name.to_camel_case();
-                }
-                match &ty.kind {
-                    TypeDefKind::Type(t) => self.ty_to_str(iface, t),
-                    TypeDefKind::Record(r) if r.is_tuple() => self.tuple_to_str(iface, r),
-                    TypeDefKind::Record(_) => panic!("anonymous record"),
-                    TypeDefKind::Variant(v) if v.is_bool() => "boolean".to_string(),
-                    TypeDefKind::Variant(v) => {
-                        if self.is_nullable_option(iface, v) {
-                            return self.ty_to_str(iface, v.cases[1].ty.as_ref().unwrap())
-                                + " | null";
-                        } else if let Some(t) = v.as_option() {
-                            // self.needs_ty_option = true;
-                            return format!("Option<{}>", self.ty_to_str(iface, t));
-                        } else if let Some((ok, err)) = v.as_expected() {
-                            // self.needs_ty_result = true;
-                            let first = match ok {
-                                Some(ok) => self.ty_to_str(iface, ok),
-                                None => "undefined".to_string(),
-                            };
-                            let second = match err {
-                                Some(err) => self.ty_to_str(iface, err),
-                                None => "undefined".to_string(),
-                            };
-                            return format!("Result<{}, {}>", first, second);
-                        }
-                        panic!("anonymous variant");
-                    }
-                    TypeDefKind::List(v) => self.list_to_str(iface, v),
-                    TypeDefKind::PushBuffer(_) => "buffer".to_string(), //self.print_buffer(iface, true, _),
-                    TypeDefKind::PullBuffer(_) => "buffer".to_string(), //self.print_buffer(iface, false, _),
-                    TypeDefKind::Pointer(_) | TypeDefKind::ConstPointer(_) => "number".to_string(),
-                }
-            }
-        }
-    }
-
     fn print_ty(&mut self, iface: &Interface, ty: &Type) {
         match ty {
             Type::U8
@@ -168,7 +96,7 @@ impl Ts {
             | Type::S32
             | Type::F32
             | Type::F64 => self.src.ts("number"),
-            Type::U64  => self.src.ts("u64"),
+            Type::U64 => self.src.ts("u64"),
             Type::S64 => self.src.ts("i64"),
             Type::Char => self.src.ts("string"),
             Type::Handle(id) => self.src.ts(&iface.resources[*id].name.to_camel_case()),
@@ -183,7 +111,7 @@ impl Ts {
                     TypeDefKind::Record(_) => panic!("anonymous record"),
                     TypeDefKind::Variant(v) if v.is_bool() => self.src.ts("boolean"),
                     TypeDefKind::Variant(v) => {
-                        if self.is_nullable_option(iface, v) {
+                        if iface.is_nullable_option(v) {
                             self.print_ty(iface, v.cases[1].ty.as_ref().unwrap());
                             self.src.ts(" | null");
                         } else if let Some(t) = v.as_option() {
@@ -219,26 +147,14 @@ impl Ts {
         }
     }
 
-    fn list_to_str(&self, iface: &Interface, ty: &Type) -> String {
-        if let Some(src) = self.hash_map_to_str(iface, ty) {
-            src
-        } else {
-            match self.array_ty(iface, ty) {
-                Some(ty) => ty.to_string(),
-                None => {
-                    if let Type::Char = ty {
-                        "string".to_string()
-                    } else {
-                        format!("{}[]", self.ty_to_str(iface, ty))
-                    }
-                }
-            }
-        }
-    }
 
     fn print_list(&mut self, iface: &Interface, ty: &Type) {
-        if let Some(src) = self.hash_map_to_str(iface, ty) {
-            self.src.ts(&src)
+        if let Some(r) = self.hash_map(iface, ty) {
+            self.src.ts("Record<");
+            self.print_ty(iface, &r.fields[0].ty);
+            self.src.ts(", ");
+            self.print_ty(iface, &r.fields[1].ty);
+            self.src.ts(">");
         } else {
             match self.array_ty(iface, ty) {
                 Some(ty) => self.src.ts(ty),
@@ -254,17 +170,6 @@ impl Ts {
         }
     }
 
-    fn tuple_to_str(&self, iface: &Interface, record: &Record) -> String {
-        format!(
-            "[{}]",
-            record
-                .fields
-                .iter()
-                .map(|field| self.ty_to_str(iface, &field.ty))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
 
     fn print_tuple(&mut self, iface: &Interface, record: &Record) {
         self.src.ts("[");
@@ -296,7 +201,11 @@ impl Ts {
     }
 
     fn docs(&mut self, docs: &Docs) {
-        let docs = match &docs.contents {
+        self.doc_str(&docs.contents);
+    }
+
+    fn doc_str(&mut self, contents: &Option<String>) {
+        let docs = match &contents {
             Some(docs) => docs,
             None => return,
         };
@@ -311,6 +220,28 @@ impl Ts {
             }
             self.src.ts("*/\n");
         }
+    }
+
+    fn print_args(&mut self, iface: &Interface, func: &Function, param_start: usize) {
+        self.src.ts("(args: {");
+        let none: Option<String> = None;
+
+        let arg_fields: Vec<(&str, &Type, &Option<String>)> = func.params[param_start..]
+            .iter()
+            .map(|(name, ty)| (name.as_str(), ty, &none))
+            .collect();
+        self.print_fields(iface, arg_fields);
+        self.src.ts("}");
+        if func.params.len() == 0 {
+            self.src.ts(" = {}");
+        };
+        self.src.ts(", options?: ");
+        self.src.ts(if is_change(func) {
+            "ChangeMethodOptions"
+        } else {
+            "ViewFunctionOptions"
+        });
+        self.src.ts("): ");
     }
 
     fn ts_func(&mut self, iface: &Interface, func: &Function) {
@@ -353,31 +284,6 @@ impl Ts {
         };
         let name = func.item_name().to_snake_case();
 
-        let mut args_string = String::new();
-
-        for (i, (name, ty)) in func.params[param_start..].iter().enumerate() {
-            if i > 0 {
-                args_string.push_str(", ");
-            }
-            let (_type, is_nullable) = is_nullable(iface, ty);
-            args_string.push_str(to_js_ident(&name.to_snake_case()));
-            if is_nullable {
-                args_string.push_str("?");
-            }
-            args_string.push_str(": ");
-            args_string.push_str(&self.ty_to_str(iface, &_type));
-        }
-        let default_object = if args_string.len() > 0 { "" } else { " = {}" };
-        let options_type = if is_change(func) {
-            "ChangeMethodOptions"
-        } else {
-            "ViewFunctionOptions"
-        };
-        let arg_str =
-            format!("(args: {{{args_string}}}{default_object}, options?: {options_type}): ");
-
-        self.src.ts(&arg_str);
-
         // Always async
         self.src.ts("Promise<");
 
@@ -416,17 +322,33 @@ impl Ts {
                 "return providers.getTransactionLastResult(await this.{name}Raw(args, options));\n}}\n"
             ));
             self.docs(&func.docs);
-            self.src.ts(&format!(
-                "{name}Raw{arg_str} Promise<providers.FinalExecutionOutcome> {{\n"
-            ));
+            self.src.ts(&format!("{name}Raw"));
+            self.print_args(iface, func, param_start);
+            self.src.ts("Promise<providers.FinalExecutionOutcome> {{\n");
             self.src.ts(&format!("return this.account.functionCall({{contractId: this.contractId, methodName: \"{name}\", args, ...options}});\n}}\n"));
             self.docs(&func.docs);
-            self.src
-                .ts(&format!("{name}Tx{arg_str} transactions.Action {{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
+            self.src.ts(&format!("{name}Tx"));
+            self.print_args(iface, func, param_start);
+            self.src.ts(&format!("transactions.Action {{\n return transactions.functionCall(\"{name}\", args, options?.gas ?? DEFAULT_FUNCTION_CALL_GAS, options?.attachedDeposit ?? new BN(0))\n}}\n"));
         } else {
             self.src.ts(&format!(
                 "return this.account.viewFunction(this.contractId, \"{name}\", args, options);\n}}\n"
             ));
+        }
+    }
+
+    fn print_fields(&mut self, iface: &Interface, fields: Vec<(&str, &Type, &Option<String>)>) {
+        for (name, ty, docs) in fields.iter() {
+            self.doc_str(docs);
+            self.src.ts(&name.to_snake_case());
+            if iface.is_ty_nullable_option(ty) {
+                self.src.ts("?");
+            }
+            let ty= iface.get_nullable_option(ty).unwrap_or(ty);
+            // self.src.ts(name.to_snake_case());
+            self.src.ts(": ");
+            self.print_ty(iface, &ty);
+            self.src.ts(",\n");
         }
     }
 }
@@ -499,17 +421,13 @@ impl Generator for Ts {
         } else {
             self.src
                 .ts(&format!("export interface {} {{\n", name.to_camel_case()));
-            for field in record.fields.iter() {
-                self.docs(&field.docs);
-                let (_ty, is_nullable) = is_nullable(iface, &field.ty);
-                self.src.ts(&format!(
-                    "{}{}: ",
-                    field.name.to_snake_case(),
-                    if is_nullable { "?" } else { "" }
-                ));
-                self.print_ty(iface, &_ty);
-                self.src.ts(",\n");
-            }
+
+            let fields = record
+                .fields
+                .iter()
+                .map(|f| (f.name.as_str(), &f.ty, &f.docs.contents))
+                .collect();
+            self.print_fields(iface, fields);
             self.src.ts("}\n");
         }
     }
@@ -528,7 +446,7 @@ impl Generator for Ts {
                 "export type {} = boolean;\n",
                 name.to_camel_case(),
             ));
-        } else if self.is_nullable_option(iface, variant) {
+        } else if iface.is_nullable_option(variant) {
             self.src
                 .ts(&format!("export type {} = ", name.to_camel_case()));
             self.print_ty(iface, variant.cases[1].ty.as_ref().unwrap());
@@ -709,8 +627,6 @@ impl Generator for Ts {
             self.src.ts("}\n");
         }
 
-        let exports = mem::take(&mut self.src);
-
         if mem::take(&mut self.needs_ty_option) {
             self.src
                 .ts("export type Option<T> = { tag: \"none\" } | { tag: \"some\", val; T };\n");
@@ -722,13 +638,10 @@ impl Generator for Ts {
         }
 
         self.src.ts(&imports.ts);
-        self.src.ts(&exports.ts);
 
         let src = mem::take(&mut self.src);
         let name = iface.name.to_kebab_case();
-        if !self.opts.no_typescript {
-            files.push(&format!("{}.ts", name), src.ts.as_bytes());
-        }
+        files.push(&format!("{}.ts", name), src.ts.as_bytes());
     }
 
     fn finish_all(&mut self, _files: &mut Files) {
@@ -737,24 +650,10 @@ impl Generator for Ts {
 }
 
 impl Ts {
-    fn hash_map_to_str(&self, iface: &Interface, ty: &Type) -> Option<String> {
-        match ty {
-            Type::Id(id) => {
-                let ty = &iface.types[*id];
-                if let Some(_) = &ty.name {
-                    return None;
-                }
-                match &ty.kind {
-                    TypeDefKind::Record(r) if r.is_tuple() && r.fields.len() == 2 => Some(format!(
-                        "Record<{}, {}>",
-                        self.ty_to_str(iface, &r.fields[0].ty),
-                        self.ty_to_str(iface, &r.fields[1].ty)
-                    )),
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
+    fn hash_map<'a>(&self, iface: &'a Interface, ty: &Type) -> Option<&'a Record> {
+        iface
+            .get_record(ty)
+            .filter(|r| r.is_tuple() && r.fields.len() == 2)
     }
 }
 
@@ -790,18 +689,4 @@ fn is_change(func: &Function) -> bool {
     false
 }
 
-// TODO replace this with work upstream
-fn is_nullable(iface: &Interface, ty: &Type) -> (Type, bool) {
-    //Note: currently making type non-nullable since the "?" makes it optional
-    if let Type::Id(id) = ty {
-        match &iface.types[*id].kind {
-            TypeDefKind::Variant(v) => v
-                .as_option()
-                .and_then(|_| v.cases[1].ty.as_ref())
-                .map_or((ty.clone(), false), |ty| (ty.clone(), true)),
-            _ => (ty.clone(), false),
-        }
-    } else {
-        (ty.clone(), false)
-    }
-}
+
