@@ -21,7 +21,7 @@ test = false
 anyhow = "1.0"
 structopt = { version = "0.3", default-features = false }
 wit-bindgen-gen-core = { path = 'crates/gen-core', package= "aha-wit-bindgen-gen-core" }
-# wit-bindgen-gen-rust-wasm = { path = 'crates/gen-rust-wasm', features = ['structopt'] }
+wit-bindgen-gen-rust-wasm-near = { path = 'crates/gen-rust-wasm-near', features = ['structopt'] }
 # wit-bindgen-gen-wasmtime = { path = 'crates/gen-wasmtime', features = ['structopt'] }
 # wit-bindgen-gen-wasmtime-py = { path = 'crates/gen-wasmtime-py', features = ['structopt'] }
 # wit-bindgen-gen-js = { path = 'crates/gen-js', features = ['structopt'] }

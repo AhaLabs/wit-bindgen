@@ -12,12 +12,12 @@ struct Opt {
 
 #[derive(Debug, StructOpt)]
 enum Command {
-    // RustWasm {
-    //     #[structopt(flatten)]
-    //     opts: wit_bindgen_gen_rust_wasm::Opts,
-    //     #[structopt(flatten)]
-    //     common: Common,
-    // },
+    RustNear {
+        #[structopt(flatten)]
+        opts: wit_bindgen_gen_rust_wasm_near::Opts,
+        #[structopt(flatten)]
+        common: Common,
+    },
     // Wasmtime {
     //     #[structopt(flatten)]
     //     opts: wit_bindgen_gen_wasmtime::Opts,
@@ -88,6 +88,7 @@ fn main() -> Result<()> {
         // Command::WasmtimePy { opts, common } => (Box::new(opts.build()), common),
         // Command::Js { opts, common } => (Box::new(opts.build()), common),
         Command::TsNear { opts, common } => (Box::new(opts.build()), common),
+        Command::RustNear { opts, common } =>(Box::new(opts.build()), common),
         // Command::C { opts, common } => (Box::new(opts.build()), common),
         // Command::Markdown { opts, common } => (Box::new(opts.build()), common),
         // Command::SpiderMonkey { opts, common } => {
