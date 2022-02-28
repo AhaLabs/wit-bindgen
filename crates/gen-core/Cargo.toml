@@ -5,11 +5,11 @@ edition = "2018"
 license = "Apache-2.0"
 name = "aha-wit-bindgen-gen-core"
 repository = "https://github.com/ahalabs/wit-bindgen"
-version = "0.0.0"
+version = "0.0.1"
 
 [lib]
 doctest = false
 
 [dependencies]
 anyhow = "1"
-wit-parser = {path = '../parser', package = "aha-wit-parser", version = "0.0.0"}
+wit-parser = {path = '../parser', package = "aha-wit-parser", version = "0.0.2"}

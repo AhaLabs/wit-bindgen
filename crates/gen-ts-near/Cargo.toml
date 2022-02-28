@@ -15,4 +15,4 @@ test = false
 anyhow = "1.0"
 heck = "0.3"
 structopt = {version = "0.3", default-features = false, optional = true}
-wit-bindgen-gen-core = {path = '../gen-core', version = '0.0.0', package = "aha-wit-bindgen-gen-core"}
+wit-bindgen-gen-core = {path = '../gen-core', version = '0.0.1', package = "aha-wit-bindgen-gen-core"}

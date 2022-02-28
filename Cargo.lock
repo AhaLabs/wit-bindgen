@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "aha-wit-bindgen-gen-core"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "aha-wit-parser",
  "anyhow",
@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "aha-wit-parser"
-version = "0.0.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "id-arena",
