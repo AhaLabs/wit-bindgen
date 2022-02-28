@@ -465,6 +465,53 @@ impl Interface {
             _ => false,
         }
     }
+
+    pub fn get_record(&self, ty: &Type) -> Option<&Record> {
+        match ty {
+            Type::Id(id) => {
+                let ty = &self.types[*id];
+                if let Some(_) = &ty.name {
+                    return None;
+                }
+                match &ty.kind {
+                    TypeDefKind::Record(r) => Some(r),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_variant(&self, ty: &Type) -> Option<&Variant> {
+        if let Type::Id(id) = ty {
+            match &self.types[*id].kind {
+                TypeDefKind::Variant(v) => Some(v),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_nullable_option(&self, ty: &Type) -> Option<&Type> {
+        self.get_variant(ty).and_then(|v| v.as_option())
+    }
+
+    pub fn is_ty_nullable_option(&self, ty: &Type) -> bool {
+        self.get_variant(ty).map_or(false, |v| {
+            v.as_option().map_or(false, |ty| {
+                self.get_nullable_option(ty)
+                    .map_or(true, |ty| self.get_nullable_option(ty).is_none())
+            })
+        })
+    }
+
+    pub fn is_nullable_option(&self, variant: &Variant) -> bool {
+        variant.as_option().map_or(false, |ty| {
+            self.get_nullable_option(ty)
+                .map_or(true, |ty| self.get_nullable_option(ty).is_none())
+        })
+    }
 }
 
 fn load_fs(root: &Path, name: &str) -> Result<(PathBuf, String)> {
