@@ -7,6 +7,7 @@
 //!
 //!     cargo test --test all foo.wit
 
+use aha_wit_parser::*;
 use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -16,7 +17,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use aha_wit_parser::*;
 
 fn main() {
     let tests = find_tests();
