@@ -1,8 +1,11 @@
 [package]
 name = 'aha-wit-parser'
 version = "0.1.0"
+description = "Published mirror of wit-parser"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 edition = "2018"
+license = "APACHE"
+repository = "https://github.com/ahalabs/wit-bindgen"
 
 [dependencies]
 id-arena = "2"
