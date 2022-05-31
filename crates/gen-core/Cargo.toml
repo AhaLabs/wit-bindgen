@@ -11,5 +11,5 @@ repository = "https://github.com/ahalabs/wit-bindgen"
 doctest = false
 
 [dependencies]
-wit-parser = { path = '../parser', version = "*",  package = 'aha-wit-parser' }
+wit-parser = { path = '../parser', version = "0.1.0",  package = 'aha-wit-parser' }
 anyhow = "1"
