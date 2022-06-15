@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.40"
 wasmlink = { path = "../wasmlink" }
-wit-parser = { path = "../parser" }
+wit-parser = { path = "../parser" , package = 'aha-wit-parser' }
 
 [dev-dependencies]
 wasmtime = "0.35.2"
