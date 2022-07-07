@@ -9,5 +9,5 @@ doctest = false
 test = false
 
 [dependencies]
-wit-bindgen-gen-core = { path = '../gen-core' }
+wit-bindgen-gen-core = { path = '../gen-core', package = 'aha-wit-bindgen-gen-core' }
 heck = "0.3"

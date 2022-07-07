@@ -7,6 +7,7 @@
 //!
 //!     cargo test --test all foo.wit
 
+use aha_wit_parser::*;
 use anyhow::{bail, Context, Result};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -17,7 +18,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
-use wit_parser::*;
 
 fn main() {
     let tests = find_tests();
@@ -274,7 +274,7 @@ fn to_json(i: &Interface) -> String {
     };
     return serde_json::to_string_pretty(&iface).unwrap();
 
-    fn translate_typedef(ty: &wit_parser::TypeDef) -> Type {
+    fn translate_typedef(ty: &aha_wit_parser::TypeDef) -> Type {
         match &ty.kind {
             TypeDefKind::Type(t) => Type::Primitive(translate_type(t)),
             TypeDefKind::Record(r) => Type::Record {
@@ -317,8 +317,8 @@ fn to_json(i: &Interface) -> String {
         }
     }
 
-    fn translate_type(ty: &wit_parser::Type) -> String {
-        use wit_parser::Type;
+    fn translate_type(ty: &aha_wit_parser::Type) -> String {
+        use aha_wit_parser::Type;
         match ty {
             Type::Unit => format!("unit"),
             Type::Bool => format!("bool"),
