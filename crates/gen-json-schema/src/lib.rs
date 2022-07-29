@@ -1,11 +1,14 @@
-use std::{mem, ops::Deref};
+use std::{
+    mem,
+    ops::{Deref, DerefMut},
+};
 
 use heck::*;
 pub use valico::json_schema::{
     builder::{Builder, Dependencies},
     PrimitiveType,
 };
-use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator, Source};
+use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator};
 use wit_parser::*;
 
 pub mod schema;
@@ -30,6 +33,11 @@ impl Deref for Deps {
     }
 }
 
+impl DerefMut for Deps {
+    fn deref_mut(&mut self) -> &mut Dependencies {
+        &mut self.0
+    }
+}
 trait AddDep {
     fn add_dep(&mut self, s: &str);
 }
@@ -75,7 +83,7 @@ impl JSONSchema {
 
     // fn
 
-    fn print_ty(&mut self, iface: &Interface, ty: &Type, builder: &mut Builder) {
+    pub fn build_ty(iface: &Interface, ty: &Type, builder: &mut Builder) {
         match ty {
             Type::Unit => builder.add_dep("unit"),
             Type::Bool => builder.boolean(),
@@ -98,19 +106,13 @@ impl JSONSchema {
             }
             Type::Id(id) => {
                 let ty = &iface.types[*id];
-                // if !skip_name {
-                //     if let Some(name) = &ty.name {
-                //         self.src.push_str("[`");
-                //         self.src.push_str(name);
-                //         self.src.push_str("`](#");
-                //         self.src.push_str(&name.to_snake_case());
-                //         self.src.push_str(")");
-                //         return;
-                //     }
-                // }
+                if let Some(name) = &ty.name {
+                    builder.add_dep(&name.to_camel_case());
+                    return;
+                }
                 match &ty.kind {
-                    TypeDefKind::Type(t) => self.print_ty(iface, t, builder),
-                    TypeDefKind::Tuple(t) => self.print_tuple(iface, t, builder),
+                    TypeDefKind::Type(t) => Self::build_ty(iface, t, builder),
+                    TypeDefKind::Tuple(t) => Self::build_tuple(iface, t, builder),
                     TypeDefKind::Record(_)
                     | TypeDefKind::Flags(_)
                     | TypeDefKind::Enum(_)
@@ -118,25 +120,17 @@ impl JSONSchema {
                     | TypeDefKind::Union(_) => {
                         unreachable!()
                     }
-                    TypeDefKind::Option(t) => {
-                        self.print_ty(iface, t, builder);
-                        builder.null()
-                    }
-                    TypeDefKind::Expected(e) => builder.one_of(|s| {
-                        s.push(|s| {
-                            self.print_ty(iface, &e.ok, s);
-                            self.print_ty(iface, &e.err, s);
-                        })
-                    }),
+                    TypeDefKind::Option(t) => Self::build_option(iface, t, builder),
+                    TypeDefKind::Expected(e) => Self::build_expected(iface, e, builder),
                     TypeDefKind::List(t) => {
                         builder.array();
-                        builder.items_array(|s| s.push(|s| self.print_ty(iface, t, s)));
+                        builder.items_array(|s| s.push(|s| Self::build_ty(iface, t, s)));
                     }
                     TypeDefKind::Stream(s) => {
                         // self.src.push_str("stream<");
-                        // self.print_ty(iface, &s.element, false);
+                        // Self::build_ty(iface, &s.element, false);
                         // self.src.push_str(", ");
-                        // self.print_ty(iface, &s.end, false);
+                        // Self::build_ty(iface, &s.end, false);
                         // self.src.push_str(">");
                     }
                 }
@@ -144,19 +138,33 @@ impl JSONSchema {
         }
     }
 
-    fn print_tuple(&mut self, iface: &Interface, tuple: &Tuple, builder: &mut Builder) {
+    pub fn build_tuple(iface: &Interface, tuple: &Tuple, builder: &mut Builder) {
         builder.array();
         let len = tuple.types.len() as u64;
         builder.max_length(len);
         builder.min_length(len);
         builder.items_array(|s| {
             for ty in tuple.types.iter() {
-                s.push(|b| self.print_ty(iface, ty, b));
+                s.push(|b| Self::build_ty(iface, ty, b));
             }
         });
     }
 
-    fn docs(&mut self, docs: &Docs, builder: &mut Builder) {
+    pub fn build_option(iface: &Interface, ty: &Type, builder: &mut Builder) {
+        Self::build_ty(iface, ty, builder);
+        builder.null()
+    }
+
+    pub fn build_expected(iface: &Interface, e: &Expected, builder: &mut Builder) {
+        builder.one_of(|s| {
+            s.push(|s| {
+                Self::build_ty(iface, &e.ok, s);
+                Self::build_ty(iface, &e.err, s);
+            })
+        })
+    }
+
+    pub fn docs(docs: &Docs, builder: &mut Builder) {
         let docs = match &docs.contents {
             Some(docs) => docs,
             None => return,
@@ -164,7 +172,7 @@ impl JSONSchema {
         builder.desc(docs)
     }
 
-    //     fn print_type_header(&mut self, name: &str) {
+    //     pub fn build_type_header(name: &str) {
     //         if self.types == 0 {
     //             self.src.push_str("# Types\n\n");
     //         }
@@ -178,8 +186,8 @@ impl JSONSchema {
     //             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
     //     }
 
-    //     fn print_type_info(&mut self, ty: TypeId, docs: &Docs) {
-    //         self.docs(docs);
+    //     pub fn build_type_info(ty: TypeId, docs: &Docs) {
+    //         Self::docs(docs);
     //         self.src.push_str("\n");
     //         self.src
     //             .push_str(&format!("Size: {}, ", self.sizes.size(&Type::Id(ty))));
@@ -188,16 +196,20 @@ impl JSONSchema {
     //     }
 }
 
+// struct JsonBuilder<'a> {
+
+// }
+
 impl Generator for JSONSchema {
     fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
         // self.sizes.fill(iface);
-        // schema::add_primitives(&mut self.deps.0);
+        schema::add_primitives(&mut self.deps.0);
     }
 
     fn type_record(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         record: &Record,
         docs: &Docs,
@@ -207,7 +219,7 @@ impl Generator for JSONSchema {
             // builder.id(name);
             builder.object();
             builder.additional_properties(false);
-            self.docs(docs, builder);
+            Self::docs(docs, builder);
             let mut req = vec![];
             builder.properties(|hash| {
                 for Field { docs, name, ty } in record.fields.iter() {
@@ -216,12 +228,14 @@ impl Generator for JSONSchema {
                             req.push(name.to_string());
                             ty
                         });
-                        self.print_ty(iface, ty, builder);
-                        self.docs(docs, builder)
+                        Self::build_ty(iface, ty, builder);
+                        Self::docs(docs, builder)
                     })
                 }
             });
-            builder.required(req)
+            if req.len() > 0 {
+                builder.required(req);
+            }
         });
         self.deps = d;
     }
@@ -229,17 +243,15 @@ impl Generator for JSONSchema {
     fn type_tuple(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         tuple: &Tuple,
         docs: &Docs,
     ) {
-        let mut d = mem::take(&mut self.deps);
-        d.0.schema(name, |builder| {
-            self.print_tuple(iface, tuple, builder);
-            self.docs(docs, builder);
+        self.deps.schema(name, |builder| {
+            Self::build_tuple(iface, tuple, builder);
+            Self::docs(docs, builder);
         });
-        self.deps = d;
     }
 
     fn type_flags(
@@ -278,35 +290,40 @@ impl Generator for JSONSchema {
     fn type_option(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         payload: &Type,
         docs: &Docs,
     ) {
+        self.deps.schema(name, |builder| {
+            Self::build_option(iface, payload, builder);
+            Self::docs(docs, builder);
+        });
     }
 
     fn type_expected(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         expected: &Expected,
         docs: &Docs,
     ) {
-        // self.type_alias(iface, id,name, ty, docs)
+        self.deps.schema(name, |builder| {
+            Self::build_expected(iface, expected, builder);
+            Self::docs(docs, builder);
+        });
     }
 
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
         drop((iface, ty));
     }
 
-    fn type_alias(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        let mut d = mem::take(&mut self.deps);
-        d.0.schema(name, |builder| {
-            self.print_ty(iface, ty, builder);
-            self.docs(docs, builder)
+    fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.deps.schema(name, |builder| {
+            Self::build_ty(iface, ty, builder);
+            Self::docs(docs, builder)
         });
-        self.deps = d;
     }
 
     fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
@@ -317,7 +334,22 @@ impl Generator for JSONSchema {
         self.type_alias(iface, id, name, ty, docs)
     }
 
-    fn import(&mut self, iface: &Interface, func: &Function) {}
+    fn import(&mut self, iface: &Interface, func: &Function) {
+        // let mut d = mem::take(&mut self.deps);
+        // let Function {
+        //     name,
+        //     is_async,
+        //     docs,
+        //     kind,
+        //     params,
+        //     result,
+        // } = func;
+        // d.0.schema(name, |builder| {
+        //     Self::build_ty(iface, ty, builder);
+        //     Self::docs(docs, builder)
+        // });
+        // self.deps = d;
+    }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
         self.import(iface, func);
@@ -332,7 +364,7 @@ impl Generator for JSONSchema {
             let _ = mem::replace(deps, d);
         });
 
-        println!("{}", builder.into_json());
+        println!("{:#?}", builder.into_json());
 
         // let parser = Parser::new(&self.src);
         // let mut events = Vec::new();
@@ -427,15 +459,14 @@ type t = tuple<u8, string, option<bool>>
 
     #[test]
     fn option() {
-      get_str(
-          r#"
-struct foo {}
+        get_str(
+            r#"
+record foo {}
 
-/// This is a doc string
 type t = option<foo>
     "#,
-      );
-  }
+        );
+    }
 
     #[test]
     fn builder() {

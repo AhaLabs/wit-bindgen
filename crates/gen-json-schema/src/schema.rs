@@ -2,7 +2,6 @@ use valico::json_schema::{builder::Dependencies, PrimitiveType};
 use PrimitiveType::{Integer, Number};
 
 pub fn add_primitives(deps: &mut Dependencies) {
-
     deps.schema("u64", |b| {
         b.type_(Integer);
         b.minimum(0f64);
@@ -61,15 +60,13 @@ pub fn add_primitives(deps: &mut Dependencies) {
         b.maximum(1.7976931348623157E+308);
     });
 
-    deps.schema("unit",|b|{});
+    deps.schema("unit", |_b| {});
 
-    deps.schema("char",|b|{
-      b.string();
-      b.max_length(1);
+    deps.schema("char", |b| {
+        b.string();
+        b.max_length(1);
     });
-
 }
-
 
 /*
 {

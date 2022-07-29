@@ -1,0 +1,5 @@
+record foo {}
+
+type t = option<foo>
+
+faa: function(t: t)
