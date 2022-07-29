@@ -13,8 +13,10 @@ use wit_parser::*;
 
 pub mod schema;
 
+#[derive(Default)]
 pub struct JSONSchema {
     deps: Deps,
+    add_primitives: bool,
 }
 
 pub struct Deps(Dependencies);
@@ -77,6 +79,7 @@ impl JSONSchema {
     pub fn new() -> Self {
         Self {
             deps: Deps::default(),
+            add_primitives: true,
         }
     }
 
@@ -193,16 +196,90 @@ impl JSONSchema {
     //         self.src
     //             .push_str(&format!("Alignment: {}\n", self.sizes.align(&Type::Id(ty))));
     //     }
+
+    pub fn build_enum(enm_: &Enum, builder: &mut Builder) {
+        // TODO: Allow comments
+        builder.enum_(|b| enm_.cases.iter().for_each(|case| b.push(case.name.clone())));
+    }
+
+    pub fn build_union(iface: &Interface, union: &Union, builder: &mut Builder) {
+        // TODO: Allow comments
+        builder.one_of(|schema_array| {
+            union
+                .cases
+                .iter()
+                .for_each(|case| schema_array.push(|cb| Self::build_ty(iface, &case.ty, cb)))
+        });
+    }
+
+    pub fn build_flags(flags: &Flags, builder: &mut Builder) {
+        builder.one_of(|arr| {
+            flags.flags.iter().enumerate().for_each(|(i, flag)| {
+                arr.push(|b| {
+                    b.integer();
+                    b.id(&flag.name);
+                    let num = 1u128 << i;
+                    b.maximum(num as f64);
+                    b.minimum(num as f64);
+                    Self::docs(&flag.docs, b);
+                })
+            })
+        })
+    }
+
+    pub fn build_variant(iface: &Interface, variant: &Variant, builder: &mut Builder) {
+        // TODO: Allow comments
+        builder.object();
+        builder.one_of(|schema_array| {
+            variant.cases.iter().for_each(|case| {
+                schema_array.push(|cb| {
+                    cb.object();
+                    cb.title(&case.name);
+                    Self::build_ty(iface, &case.ty, cb);
+                    Self::docs(&case.docs, cb);
+                })
+            })
+        });
+    }
+
+    pub fn build_list(iface: &Interface, ty: &Type, builder: &mut Builder) {
+        builder.array();
+        builder.items_schema(|b| {
+            Self::build_ty(iface, ty, b);
+        })
+    }
+
+    pub fn build_func(func: &Function, builder: &mut Builder) {
+      // let fields = [Field {name: "args", type: }]
+    }
+
+    pub fn build_record(iface: &Interface, fields: &[Field], builder: &mut Builder) {
+        builder.object();
+        builder.additional_properties(false);
+        let mut req = vec![];
+        builder.properties(|hash| {
+            for Field { docs, name, ty } in fields.iter() {
+                hash.insert(name, |builder| {
+                    let ty = unwrap_option(iface, ty).unwrap_or_else(|| {
+                        req.push(name.to_string());
+                        ty
+                    });
+                    Self::build_ty(iface, ty, builder);
+                    Self::docs(docs, builder)
+                })
+            }
+        });
+        if !req.is_empty() {
+            builder.required(req);
+        }
+    }
 }
-
-// struct JsonBuilder<'a> {
-
-// }
 
 impl Generator for JSONSchema {
     fn preprocess_one(&mut self, _iface: &Interface, _dir: Direction) {
-        // self.sizes.fill(iface);
-        schema::add_primitives(&mut self.deps.0);
+        if self.add_primitives {
+            schema::add_primitives(&mut self.deps.0);
+        }
     }
 
     fn type_record(
@@ -213,30 +290,10 @@ impl Generator for JSONSchema {
         record: &Record,
         docs: &Docs,
     ) {
-        let mut d = mem::take(&mut self.deps);
-        d.0.schema(name, |builder| {
-            // builder.id(name);
-            builder.object();
-            builder.additional_properties(false);
+        self.deps.schema(name, |builder| {
+          Self::build_record(iface, &record.fields, builder);
             Self::docs(docs, builder);
-            let mut req = vec![];
-            builder.properties(|hash| {
-                for Field { docs, name, ty } in record.fields.iter() {
-                    hash.insert(name, |builder| {
-                        let ty = unwrap_option(iface, ty).unwrap_or_else(|| {
-                            req.push(name.to_string());
-                            ty
-                        });
-                        Self::build_ty(iface, ty, builder);
-                        Self::docs(docs, builder)
-                    })
-                }
-            });
-            if !req.is_empty() {
-                builder.required(req);
-            }
         });
-        self.deps = d;
     }
 
     fn type_tuple(
@@ -256,34 +313,57 @@ impl Generator for JSONSchema {
     fn type_flags(
         &mut self,
         _iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         flags: &Flags,
         docs: &Docs,
     ) {
+        self.deps.schema(name, |builder| {
+            Self::build_flags(flags, builder);
+            Self::docs(docs, builder);
+        });
     }
 
     fn type_variant(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         variant: &Variant,
         docs: &Docs,
     ) {
+        self.deps.schema(name, |builder| {
+            Self::build_variant(iface, variant, builder);
+            Self::docs(docs, builder);
+        })
     }
 
     fn type_union(
         &mut self,
         iface: &Interface,
-        id: TypeId,
+        _id: TypeId,
         name: &str,
         union: &Union,
         docs: &Docs,
     ) {
+        self.deps.schema(name, |builder| {
+            Self::build_union(iface, union, builder);
+            Self::docs(docs, builder);
+        });
     }
 
-    fn type_enum(&mut self, _iface: &Interface, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+    fn type_enum(
+        &mut self,
+        _iface: &Interface,
+        _id: TypeId,
+        name: &str,
+        enum_: &Enum,
+        docs: &Docs,
+    ) {
+        self.deps.schema(name, |builder| {
+            Self::build_enum(enum_, builder);
+            Self::docs(docs, builder);
+        });
     }
 
     fn type_option(
@@ -314,6 +394,7 @@ impl Generator for JSONSchema {
         });
     }
 
+    //TODO: resource
     fn type_resource(&mut self, iface: &Interface, ty: ResourceId) {
         drop((iface, ty));
     }
@@ -321,12 +402,15 @@ impl Generator for JSONSchema {
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
         self.deps.schema(name, |builder| {
             Self::build_ty(iface, ty, builder);
-            Self::docs(docs, builder)
+            Self::docs(docs, builder);
         });
     }
 
-    fn type_list(&mut self, iface: &Interface, id: TypeId, name: &str, _ty: &Type, docs: &Docs) {
-        self.type_alias(iface, id, name, &Type::Id(id), docs);
+    fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
+        self.deps.schema(name, |builder| {
+            Self::build_list(iface, ty, builder);
+            Self::docs(docs, builder);
+        })
     }
 
     fn type_builtin(&mut self, iface: &Interface, id: TypeId, name: &str, ty: &Type, docs: &Docs) {
@@ -335,14 +419,17 @@ impl Generator for JSONSchema {
 
     fn import(&mut self, iface: &Interface, func: &Function) {
         // let mut d = mem::take(&mut self.deps);
-        // let Function {
-        //     name,
-        //     is_async,
-        //     docs,
-        //     kind,
-        //     params,
-        //     result,
-        // } = func;
+        let Function {
+            name,
+            is_async,
+            docs,
+            kind,
+            params,
+            result,
+        } = func;
+        self.deps.schema(name, |builder| {
+            Self::build_func(func, builder);
+        });
         // d.0.schema(name, |builder| {
         //     Self::build_ty(iface, ty, builder);
         //     Self::docs(docs, builder)
@@ -363,7 +450,7 @@ impl Generator for JSONSchema {
             let _ = mem::replace(deps, d);
         });
 
-        println!("{:#?}", builder.into_json());
+        println!("{:#}", builder.into_json());
 
         // let parser = Parser::new(&self.src);
         // let mut events = Vec::new();
@@ -400,7 +487,7 @@ mod test {
     }
 
     fn gen_interface(i: Interface) {
-        let mut schema = JSONSchema::new();
+        let mut schema = JSONSchema::default();
         println!("{:#?}", i);
         let imports = vec![i];
         schema.preprocess_all(&imports, &[]);
@@ -441,7 +528,7 @@ record foo {
         get_str(
             r#"
 /// This is a doc string
-type bytes = list<u8>
+type bytes = list<bool>
       "#,
         );
     }
@@ -463,6 +550,51 @@ type t = tuple<u8, string, option<bool>>
 record foo {}
 
 type t = option<foo>
+    "#,
+        );
+    }
+
+    #[test]
+    fn enum_() {
+        get_str(
+            r#"
+/// Letters
+enum letters {
+  a,
+  b,
+  c,
+  d,
+}
+    "#,
+        );
+    }
+
+    #[test]
+    fn union() {
+        get_str(
+            r#"
+/// different types
+union union-example {
+  bool,
+  string,
+  list<string>,
+}
+    "#,
+        );
+    }
+
+    #[test]
+    fn variant() {
+        get_str(
+            r#"
+variant v1 {
+  /// bool variant
+  a(bool),
+  /// String
+  b(string),
+  /// tuple
+  c(tuple<bool, bool>),
+}
     "#,
         );
     }
