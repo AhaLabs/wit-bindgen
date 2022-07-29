@@ -56,8 +56,8 @@ pub fn add_primitives(deps: &mut Dependencies) {
 
     deps.schema("f64", |b| {
         b.type_(Number);
-        b.minimum(-1.7976931348623157E+308);
-        b.maximum(1.7976931348623157E+308);
+        b.minimum(-1.797_693_134_862_315_7E308);
+        b.maximum(1.797_693_134_862_315_7E308);
     });
 
     deps.schema("unit", |_b| {});

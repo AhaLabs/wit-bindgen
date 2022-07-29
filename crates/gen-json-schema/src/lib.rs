@@ -56,8 +56,7 @@ pub struct Opts {
 
 impl Opts {
     pub fn build(&self) -> JSONSchema {
-        let mut r = JSONSchema::new();
-        r
+        JSONSchema::new()
     }
 }
 
@@ -66,7 +65,7 @@ fn unwrap_option<'a>(iface: &'a Interface, ty: &'a Type) -> Option<&'a Type> {
         Type::Id(id) => {
             let ty = &iface.types[*id];
             match &ty.kind {
-                TypeDefKind::Option(t) => Some(&t),
+                TypeDefKind::Option(t) => Some(t),
                 _ => None,
             }
         }
@@ -99,7 +98,7 @@ impl JSONSchema {
             Type::Float64 => builder.add_dep("f64"),
             Type::Char => builder.add_dep("char"),
             Type::String => builder.string(),
-            Type::Handle(id) => {
+            Type::Handle(_id) => {
                 // self.src.push_str("handle<");
                 // self.src.push_str(&iface.resources[*id].name);
                 // self.src.push_str(">");
@@ -126,7 +125,7 @@ impl JSONSchema {
                         builder.array();
                         builder.items_array(|s| s.push(|s| Self::build_ty(iface, t, s)));
                     }
-                    TypeDefKind::Stream(s) => {
+                    TypeDefKind::Stream(_s) => {
                         // self.src.push_str("stream<");
                         // Self::build_ty(iface, &s.element, false);
                         // self.src.push_str(", ");
@@ -201,7 +200,7 @@ impl JSONSchema {
 // }
 
 impl Generator for JSONSchema {
-    fn preprocess_one(&mut self, iface: &Interface, _dir: Direction) {
+    fn preprocess_one(&mut self, _iface: &Interface, _dir: Direction) {
         // self.sizes.fill(iface);
         schema::add_primitives(&mut self.deps.0);
     }
@@ -233,7 +232,7 @@ impl Generator for JSONSchema {
                     })
                 }
             });
-            if req.len() > 0 {
+            if !req.is_empty() {
                 builder.required(req);
             }
         });
