@@ -9,8 +9,12 @@ wit-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
 heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 # schemars = "0.8.10"
-valico = "3.6.0"
+valico = { path = "../../../valico" }
+anyhow = "1.0.58"
 
 [dev-dependencies]
-anyhow = "1.0.58"
 test-helpers = { path = '../test-helpers', features = ['wit-bindgen-gen-wasmtime-py'] }
+
+[features]
+default = ["initial_version"]
+initial_version = []

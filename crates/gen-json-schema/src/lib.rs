@@ -11,6 +11,7 @@ pub use valico::json_schema::{
 use wit_bindgen_gen_core::{wit_parser, Direction, Files, Generator};
 use wit_parser::*;
 
+pub mod gen;
 pub mod schema;
 
 #[derive(Default)]
@@ -83,7 +84,15 @@ impl JSONSchema {
         }
     }
 
-    // fn
+    /// Convert the special doc annotations to properties.
+    /// Returns the docs without the annotations.
+    pub fn build_special_properties(props: &[&str], builder: &mut Builder) -> String {
+        props
+            .iter()
+            .filter_map(|line| comment_to_attr(line, builder))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     pub fn build_ty(iface: &Interface, ty: &Type, builder: &mut Builder) {
         match ty {
@@ -171,7 +180,10 @@ impl JSONSchema {
             Some(docs) => docs,
             None => return,
         };
-        builder.desc(docs)
+        let docs = &Self::build_special_properties(&docs.split('\n').collect::<Vec<_>>(), builder);
+        if !docs.is_empty() {
+            builder.desc(docs)
+        }
     }
 
     //     pub fn build_type_header(name: &str) {
@@ -250,7 +262,8 @@ impl JSONSchema {
     }
 
     pub fn build_func(func: &Function, builder: &mut Builder) {
-      // let fields = [Field {name: "args", type: }]
+        // let fields = [Field {name: "args", type: }]
+        // builder.schema(url)
     }
 
     pub fn build_record(iface: &Interface, fields: &[Field], builder: &mut Builder) {
@@ -291,7 +304,7 @@ impl Generator for JSONSchema {
         docs: &Docs,
     ) {
         self.deps.schema(name, |builder| {
-          Self::build_record(iface, &record.fields, builder);
+            Self::build_record(iface, &record.fields, builder);
             Self::docs(docs, builder);
         });
     }
@@ -421,14 +434,53 @@ impl Generator for JSONSchema {
         // let mut d = mem::take(&mut self.deps);
         let Function {
             name,
-            is_async,
+            // is_async,
             docs,
-            kind,
+            // kind,
             params,
             result,
+            ..
         } = func;
-        self.deps.schema(name, |builder| {
-            Self::build_func(func, builder);
+        let args = if cfg!(feature = "initial_version") {
+            name.to_string()
+        } else {
+            format!("{name}__args")
+        };
+        let res = &format!("{name}__res");
+        let mut func_docs = docs.clone();
+        self.deps.schema(&args, |builder| {
+            Self::build_record(
+                iface,
+                params
+                    .iter()
+                    .map(|(name, ty)| Field {
+                        docs: Docs::default(),
+                        name: name.to_string(),
+                        ty: ty.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                builder,
+            );
+            if !docs
+                .contents
+                .as_ref()
+                .map(|s| s.contains("@mutable"))
+                .unwrap_or(false)
+            {
+                let immutable = "@immutable";
+                func_docs.contents = docs.contents.as_ref().map_or_else(
+                    || Some(immutable.to_string()),
+                    |s| {
+                        let s = s.clone();
+                        Some(format!("{s}\n{immutable}"))
+                    },
+                );
+            };
+            Self::docs(&func_docs, builder);
+        });
+        self.deps.schema(res, |builder| {
+            Self::build_ty(iface, result, builder);
         });
         // d.0.schema(name, |builder| {
         //     Self::build_ty(iface, ty, builder);
@@ -441,7 +493,7 @@ impl Generator for JSONSchema {
         self.import(iface, func);
     }
 
-    fn finish_one(&mut self, _iface: &Interface, files: &mut Files) {
+    fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut builder = valico::json_schema::Builder::new();
         // builder.dependencies(build)
         builder.schema("http://json-schema.org/draft-07/schema#");
@@ -450,7 +502,9 @@ impl Generator for JSONSchema {
             let _ = mem::replace(deps, d);
         });
 
-        println!("{:#}", builder.into_json());
+        let output = builder.into_json().to_string();
+        let name = iface.name.to_kebab_case();
+        files.push(&format!("{}.json", name), output.as_bytes());
 
         // let parser = Parser::new(&self.src);
         // let mut events = Vec::new();
@@ -472,6 +526,24 @@ impl Generator for JSONSchema {
         // files.push("bindings.md", self.src.as_bytes());
         // files.push("bindings.html", html_output.as_bytes());
     }
+}
+
+fn comment_to_attr(line: &str, builder: &mut Builder) -> Option<String> {
+    if !line.trim_start().starts_with("@") {
+        return Some(line.to_string());
+    }
+    let mut parts = line.split_whitespace().peekable();
+    let (name, value) = match (parts.next().and_then(|s| s.strip_prefix('@')), parts.next()) {
+        (Some(mutability @ ("mutable" | "immutable")), None) => ("funcType", mutability),
+        (Some(int_arg @ ("minLength" | "maxLength")), Some(value)) => {
+            builder.custom_vocabulary(int_arg, value.parse::<i64>().ok()?);
+            return None;
+        }
+        (Some(name), value) => (name, value.unwrap_or_default()),
+        _ => return Some(line.to_string()),
+    };
+    builder.custom_vocabulary(name, value);
+    None
 }
 
 #[cfg(test)]
@@ -600,10 +672,28 @@ variant v1 {
     }
 
     #[test]
+    fn func() {
+        get_str(
+            r#"
+/// Function Doc
+f3: func(a: u32, b: u32)
+    "#,
+        );
+    }
+
+    #[test]
+    fn func_mut() {
+        get_str(
+            r#"
+/// @mutable
+f3: func(b: u32, a: u32) -> bool
+    "#,
+        );
+    }
+
+    #[test]
     fn builder() {
         let mut builder = valico::json_schema::Builder::new();
-        // builder.dependencies(build)
-        // builder.schema("https://json");
         builder.ref_("#/dependencies/Balance");
         builder.dependencies(|deps| {
             deps.schema("Balance", |builder| {
