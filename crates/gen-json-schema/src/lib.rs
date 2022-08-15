@@ -491,7 +491,6 @@ impl Generator for JSONSchema {
             let _ = mem::replace(deps, d);
         });
         let json = builder.into_json();
-        println!("{:#}", json);
         let output = json.to_string();
         let name = iface.name.to_kebab_case();
         files.push(&format!("{}.json", name), output.as_bytes());
