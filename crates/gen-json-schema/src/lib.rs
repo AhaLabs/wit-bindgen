@@ -186,28 +186,21 @@ impl JSONSchema {
         }
     }
 
-    //     pub fn build_type_header(name: &str) {
-    //         if self.types == 0 {
-    //             self.src.push_str("# Types\n\n");
-    //         }
-    //         self.types += 1;
-    //         self.src.push_str(&format!(
-    //             "## <a href=\"#{}\" name=\"{0}\"></a> `{}`: ",
-    //             name.to_snake_case(),
-    //             name,
-    //         ));
-    //         self.hrefs
-    //             .insert(name.to_string(), format!("#{}", name.to_snake_case()));
-    //     }
+    /// Adds `@immutable` to function if no mutable or no comment
+    pub fn func_docs(docs: &Docs) -> Docs {
+        let contents = Some(docs.contents.as_ref().map_or_else(
+            || "@immutable".to_string(),
+            |docs| {
+                let mut docs = docs.clone();
+                if !docs.contains("@mutable") {
+                    docs.push_str("\n@immutable");
+                }
+                docs
+            },
+        ));
+        Docs { contents }
+    }
 
-    //     pub fn build_type_info(ty: TypeId, docs: &Docs) {
-    //         Self::docs(docs);
-    //         self.src.push_str("\n");
-    //         self.src
-    //             .push_str(&format!("Size: {}, ", self.sizes.size(&Type::Id(ty))));
-    //         self.src
-    //             .push_str(&format!("Alignment: {}\n", self.sizes.align(&Type::Id(ty))));
-    //     }
 
     pub fn build_enum(enm_: &Enum, builder: &mut Builder) {
         // TODO: Allow comments
@@ -261,9 +254,37 @@ impl JSONSchema {
         })
     }
 
-    pub fn build_func(func: &Function, builder: &mut Builder) {
-        // let fields = [Field {name: "args", type: }]
-        // builder.schema(url)
+    pub fn build_func(iface: &Interface, func: &Function, builder: &mut Builder) {
+        let Function {
+            // name,
+            // is_async,
+            docs,
+            // kind,
+            params,
+            result,
+            ..
+        } = func;
+        let docs = Self::func_docs(docs);
+        builder.object();        
+        builder.properties(|schema_hash| {
+            schema_hash.insert("arguments", |builder| {
+                Self::build_record(
+                    iface,
+                    params
+                        .iter()
+                        .map(|(name, ty)| Field {
+                            docs: Docs::default(),
+                            name: name.to_string(),
+                            ty: ty.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    builder,
+                );
+                Self::docs(&docs, builder);
+            });
+            schema_hash.insert("result", |builder| Self::build_ty(iface, result, builder));
+        });
     }
 
     pub fn build_record(iface: &Interface, fields: &[Field], builder: &mut Builder) {
@@ -272,7 +293,8 @@ impl JSONSchema {
         let mut req = vec![];
         builder.properties(|hash| {
             for Field { docs, name, ty } in fields.iter() {
-                hash.insert(name, |builder| {
+                let name = &name.to_snek_case();
+                hash.insert(&name, |builder| {
                     let ty = unwrap_option(iface, ty).unwrap_or_else(|| {
                         req.push(name.to_string());
                         ty
@@ -285,6 +307,13 @@ impl JSONSchema {
         if !req.is_empty() {
             builder.required(req);
         }
+    }
+
+    pub(crate) fn schema<F>(&mut self, name: &str, builder: F)
+    where
+        F: FnOnce(&mut Builder),
+    {
+        self.deps.schema(&name.to_camel_case(), builder)
     }
 }
 
@@ -303,7 +332,7 @@ impl Generator for JSONSchema {
         record: &Record,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_record(iface, &record.fields, builder);
             Self::docs(docs, builder);
         });
@@ -317,7 +346,7 @@ impl Generator for JSONSchema {
         tuple: &Tuple,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_tuple(iface, tuple, builder);
             Self::docs(docs, builder);
         });
@@ -331,7 +360,7 @@ impl Generator for JSONSchema {
         flags: &Flags,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_flags(flags, builder);
             Self::docs(docs, builder);
         });
@@ -345,7 +374,7 @@ impl Generator for JSONSchema {
         variant: &Variant,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_variant(iface, variant, builder);
             Self::docs(docs, builder);
         })
@@ -359,7 +388,7 @@ impl Generator for JSONSchema {
         union: &Union,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_union(iface, union, builder);
             Self::docs(docs, builder);
         });
@@ -373,7 +402,7 @@ impl Generator for JSONSchema {
         enum_: &Enum,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_enum(enum_, builder);
             Self::docs(docs, builder);
         });
@@ -387,7 +416,7 @@ impl Generator for JSONSchema {
         payload: &Type,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_option(iface, payload, builder);
             Self::docs(docs, builder);
         });
@@ -401,7 +430,7 @@ impl Generator for JSONSchema {
         expected: &Expected,
         docs: &Docs,
     ) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_expected(iface, expected, builder);
             Self::docs(docs, builder);
         });
@@ -413,14 +442,14 @@ impl Generator for JSONSchema {
     }
 
     fn type_alias(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_ty(iface, ty, builder);
             Self::docs(docs, builder);
         });
     }
 
     fn type_list(&mut self, iface: &Interface, _id: TypeId, name: &str, ty: &Type, docs: &Docs) {
-        self.deps.schema(name, |builder| {
+        self.schema(name, |builder| {
             Self::build_list(iface, ty, builder);
             Self::docs(docs, builder);
         })
@@ -436,57 +465,17 @@ impl Generator for JSONSchema {
             name,
             // is_async,
             docs,
-            // kind,
-            params,
-            result,
+            // // kind,
+            // params,
+            // result,
             ..
         } = func;
-        let args = if cfg!(feature = "initial_version") {
-            name.to_string()
-        } else {
-            format!("{name}__args")
-        };
-        let res = &format!("{name}__res");
-        let mut func_docs = docs.clone();
-        self.deps.schema(&args, |builder| {
-            Self::build_record(
-                iface,
-                params
-                    .iter()
-                    .map(|(name, ty)| Field {
-                        docs: Docs::default(),
-                        name: name.to_string(),
-                        ty: ty.clone(),
-                    })
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                builder,
-            );
-            if !docs
-                .contents
-                .as_ref()
-                .map(|s| s.contains("@mutable"))
-                .unwrap_or(false)
-            {
-                let immutable = "@immutable";
-                func_docs.contents = docs.contents.as_ref().map_or_else(
-                    || Some(immutable.to_string()),
-                    |s| {
-                        let s = s.clone();
-                        Some(format!("{s}\n{immutable}"))
-                    },
-                );
-            };
-            Self::docs(&func_docs, builder);
+
+        self.deps.schema(&name.to_snek_case(), |builder| {
+            Self::build_func(iface, func, builder);
+            Self::docs(&docs, builder);
         });
-        self.deps.schema(res, |builder| {
-            Self::build_ty(iface, result, builder);
-        });
-        // d.0.schema(name, |builder| {
-        //     Self::build_ty(iface, ty, builder);
-        //     Self::docs(docs, builder)
-        // });
-        // self.deps = d;
+
     }
 
     fn export(&mut self, iface: &Interface, func: &Function) {
@@ -495,36 +484,17 @@ impl Generator for JSONSchema {
 
     fn finish_one(&mut self, iface: &Interface, files: &mut Files) {
         let mut builder = valico::json_schema::Builder::new();
-        // builder.dependencies(build)
+
         builder.schema("http://json-schema.org/draft-07/schema#");
         builder.dependencies(|deps| {
             let d = mem::take(&mut self.deps).0;
             let _ = mem::replace(deps, d);
         });
-
-        let output = builder.into_json().to_string();
+        let json = builder.into_json();
+        println!("{:#}", json);
+        let output = json.to_string();
         let name = iface.name.to_kebab_case();
         files.push(&format!("{}.json", name), output.as_bytes());
-
-        // let parser = Parser::new(&self.src);
-        // let mut events = Vec::new();
-        // for event in parser {
-        //     if let Event::Code(code) = &event {
-        //         if let Some(dst) = self.hrefs.get(code.as_ref()) {
-        //             let tag = Tag::Link(LinkType::Inline, dst.as_str().into(), "".into());
-        //             events.push(Event::Start(tag.clone()));
-        //             events.push(event.clone());
-        //             events.push(Event::End(tag));
-        //             continue;
-        //         }
-        //     }
-        //     events.push(event);
-        // }
-        // let mut html_output = String::new();
-        // html::push_html(&mut html_output, events.into_iter());
-
-        // files.push("bindings.md", self.src.as_bytes());
-        // files.push("bindings.html", html_output.as_bytes());
     }
 }
 
@@ -560,7 +530,7 @@ mod test {
 
     fn gen_interface(i: Interface) {
         let mut schema = JSONSchema::default();
-        println!("{:#?}", i);
+        // println!("{:#?}", i);
         let imports = vec![i];
         schema.preprocess_all(&imports, &[]);
         let mut files = Files::default();
@@ -651,6 +621,8 @@ union union-example {
   string,
   list<string>,
 }
+
+fon-do: func(a: union-example)
     "#,
         );
     }
@@ -687,6 +659,15 @@ f3: func(a: u32, b: u32)
             r#"
 /// @mutable
 f3: func(b: u32, a: u32) -> bool
+    "#,
+        );
+    }
+
+    #[test]
+    fn func_name() {
+        get_str(
+            r#"
+function-three: func(bees-knees: u32, a: u32) -> bool
     "#,
         );
     }
