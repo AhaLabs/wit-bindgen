@@ -1791,6 +1791,7 @@ dependencies = [
 [[package]]
 name = "valico"
 version = "3.6.1-alpha.0"
+source = "git+https://github.com/ahalabs/valico?branch=feat/custom_vocab#1c1068fc92d5317545277d4b8de18fce3a379563"
 dependencies = [
  "addr",
  "base64",

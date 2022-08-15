@@ -9,7 +9,7 @@ wit-bindgen-gen-core = { path = '../gen-core', version = '0.1.0' }
 heck = "0.3"
 structopt = { version = "0.3", default-features = false, optional = true }
 # schemars = "0.8.10"
-valico = { path = "../../../valico" }
+valico = { git = "https://github.com/ahalabs/valico", branch = "feat/custom_vocab" }
 anyhow = "1.0.58"
 
 [dev-dependencies]
